@@ -154,6 +154,18 @@ not void the run, since nothing happened, but the result reports `clean_run = fa
 
 ---
 
+## Tests
+
+```bash
+uv run --extra dev --extra neuro-san pytest -q     # 134 tests
+uv run --extra dev ruff check examples/ agents/ tests/
+```
+
+The `neuro-san` extra is needed for the coded-tool tests, because those tools import it.
+It pulls in about 96 packages, which is why it is not part of `dev`.
+
+---
+
 ## License
 
 Apache-2.0, matching nttd.
