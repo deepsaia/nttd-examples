@@ -1,0 +1,54 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+venv/
+
+# python-version
+.python-version
+
+# Tool caches
+.ruff_cache/
+.pytest_cache/
+
+# OpenTTD — ignore auto-generated files, whitelist what we need.
+# ottd_config/ contains the base template; only these are tracked:
+#   openttd.cfg      — base game settings (patched per-session)
+#   README.md        — documentation
+#   game/nttd-gs/    — our GameScript (info.nut, main.nut)
+#   ai/nttd-idle/    — idle AI for agent company slots
+#   scripts/         — autoexec.scr
+ottd_config/*
+!ottd_config/openttd.cfg
+!ottd_config/README.md
+!ottd_config/game/
+ottd_config/game/*
+!ottd_config/game/nttd-gs/
+!ottd_config/ai/
+ottd_config/ai/*
+!ottd_config/ai/nttd-idle/
+!ottd_config/scripts/
+
+# Worktrees
+.worktrees/
+
+# nttd runtime output
+runs/
+logs/
+*.db
+*.db-*
+.experiment_runs/
+.verify_runs/
+docs/superpowers/
+.playwright-mcp/

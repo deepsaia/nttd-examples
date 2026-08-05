@@ -1,0 +1,62 @@
+[project]
+name = "nttd-examples"
+version = "0.1.0"
+description = "Reference runners for the nttd OpenTTD benchmark"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "Apache-2.0" }
+
+# Every runner talks to nttd over HTTP, so nothing here depends on the nttd package
+# itself. That is the point: a contestant does not need to install the engine to write
+# an entry, and an entry written in another language is on equal footing.
+dependencies = [
+    "requests>=2.32",
+    "httpx>=0.28.0",
+    "websockets>=14.0",
+]
+
+[project.optional-dependencies]
+langchain = [
+    "langchain>=0.3",
+    "langchain-openai>=0.3",
+    "langchain-anthropic>=0.3",
+]
+langgraph = [
+    "langgraph>=0.3",
+    "langchain>=0.3",
+    "langchain-openai>=0.3",
+    "langchain-anthropic>=0.3",
+]
+openai = [
+    "openai>=1.60",
+]
+neuro-san = [
+    "neuro-san>=0.5",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# `agents` is a deliberately generic name and collides with the OpenAI Agents SDK for
+# anyone who installs both. It is kept because these are reference runners meant to be
+# read and copied rather than depended on, and moving them out of nttd is what made the
+# collision harmless.
+packages = ["agents"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
