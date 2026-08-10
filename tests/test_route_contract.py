@@ -27,6 +27,7 @@ import os
 import pytest
 import requests
 
+from agents import action_brief
 from agents.nttd_client import PARTICIPANT_PREFIX, NttdClient
 
 BASE_URL = os.environ.get("NTTD_BASE_URL", "http://127.0.0.1:8000")
@@ -173,3 +174,49 @@ class TestTheActionsTheClientDocuments:
         words = set(source.replace("`", " ").replace(",", " ").replace(".", " ").split())
         for gone in ("build_road", "build_rail", "build_road_line"):
             assert gone not in words, f"a docstring names {gone}, which nttd removed"
+
+
+class TestTheGeneratedPromptOnlyNamesRealActions:
+    """The one claim about `action_brief` worth checking, and it needs a server.
+
+    The reference in a prompt used to be hand-written: 47,000 characters that had drifted
+    far enough to still recommend `build_rail`, which nttd deleted. It is generated now,
+    and the point of generating it is that it cannot name an action the server does not
+    have. Only the server can confirm that; a fixture would just agree with itself.
+    """
+
+    def test_every_action_it_names_is_one_the_session_accepts(self) -> None:
+        """Checked against `actions/available`, not the manifest `build` reads from.
+        Comparing a rendering with its own source would only prove the rendering is
+        faithful; this proves the brief is bounded by what the session will really take.
+        """
+        client = NttdClient(base_url=BASE_URL, session_id="ses_x", token="pt_x")
+        brief = action_brief.build(client)
+
+        playable = {
+            name for names in client.available_actions().values()
+            if isinstance(names, list) for name in names
+        }
+        named = {
+            line.split("**")[1].split("(")[0]
+            for line in brief.splitlines() if line.startswith("**")
+        }
+        assert named, "the brief named no actions at all"
+        assert named <= playable, (
+            f"the brief offers {sorted(named - playable)}, which this session refuses"
+        )
+
+    def test_it_leaves_out_actions_this_session_would_refuse(self) -> None:
+        """The manifest describes operator actions too. Listing one costs a step to
+        find out it is refused."""
+        client = NttdClient(base_url=BASE_URL, session_id="ses_x", token="pt_x")
+        brief = action_brief.build(client)
+        assert "change_bank_balance" not in brief
+
+    def test_a_category_filter_narrows_it(self) -> None:
+        """The full surface is around 120 actions. A road runner handed the rail, marine
+        and aviation references pays for context it will never call."""
+        client = NttdClient(base_url=BASE_URL, session_id="ses_x", token="pt_x")
+        roads = action_brief.build(client, categories=("road",))
+        assert "build_road_stop" in roads
+        assert "build_rail_station" not in roads
