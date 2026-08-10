@@ -147,6 +147,21 @@ class NttdClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_state(self, slice_name: str) -> Any:
+        """One slice of the cached world state: towns, industries, vehicles, stations.
+
+        Named slices rather than a method each, because nttd serves them at
+        ``state/<name>`` and a wrapper per slice would be a list to keep in step with
+        the server for no gain.
+        """
+        resp = requests.get(
+            f"{self._session_url}/state/{slice_name}",
+            headers=self._headers,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def gs_query(self, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Ask the GameScript a read-only question, such as ``find_road_depot_spot``."""
         resp = requests.post(
@@ -159,12 +174,28 @@ class NttdClient:
         resp.raise_for_status()
         return resp.json()
 
-    def available_actions(self) -> dict[str, Any]:
-        """What this session will accept, from nttd's generated manifest.
+    def action_manifest(self, category: str | None = None) -> dict[str, Any]:
+        """The full action manifest: descriptions, parameters, enums.
 
-        Worth reading rather than hardcoding a list: the manifest is generated from the
-        GameScript, so it is the only description of the action surface that cannot drift
-        from it.
+        Read rather than hardcoded. The manifest is generated from the GameScript, so it
+        is the only description of the action surface that cannot drift from it, which is
+        what makes it worth building a prompt from.
+
+        Served on the **public** tier because it describes nttd rather than a session,
+        so it needs no token and can be read before a run starts.
+        """
+        resp = requests.get(
+            f"{self.base_url}/v1/public/actions",
+            params={"category": category} if category else None,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def available_actions(self) -> dict[str, Any]:
+        """Which action names this session will accept, grouped by category.
+
+        Names only. For what each one takes, use ``action_manifest``.
         """
         resp = requests.get(
             f"{self._session_url}/actions/available", headers=self._headers, timeout=10,

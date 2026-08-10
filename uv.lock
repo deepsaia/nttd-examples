@@ -1157,43 +1157,29 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
-langchain = [
-    { name = "langchain" },
-    { name = "langchain-anthropic" },
-    { name = "langchain-openai" },
-]
 langgraph = [
     { name = "langchain" },
     { name = "langchain-anthropic" },
-    { name = "langchain-openai" },
     { name = "langgraph" },
 ]
 neuro-san = [
     { name = "neuro-san" },
 ]
-openai = [
-    { name = "openai" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.0" },
-    { name = "langchain", marker = "extra == 'langchain'", specifier = ">=0.3" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = ">=0.3" },
-    { name = "langchain-anthropic", marker = "extra == 'langchain'", specifier = ">=0.3" },
     { name = "langchain-anthropic", marker = "extra == 'langgraph'", specifier = ">=0.3" },
-    { name = "langchain-openai", marker = "extra == 'langchain'", specifier = ">=0.3" },
-    { name = "langchain-openai", marker = "extra == 'langgraph'", specifier = ">=0.3" },
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = ">=0.3" },
     { name = "neuro-san", marker = "extra == 'neuro-san'", specifier = ">=0.5" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.60" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "requests", specifier = ">=2.32" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "websockets", specifier = ">=14.0" },
 ]
-provides-extras = ["langchain", "langgraph", "openai", "neuro-san", "dev"]
+provides-extras = ["langgraph", "neuro-san", "dev"]
 
 [[package]]
 name = "objsize"

@@ -16,19 +16,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-langchain = [
-    "langchain>=0.3",
-    "langchain-openai>=0.3",
-    "langchain-anthropic>=0.3",
-]
+# One LLM example and one multi-agent system, rather than one per framework. The
+# langchain and openai runners were removed: they demonstrated the same loop through a
+# different SDK, and four copies of one idea drift in four directions.
 langgraph = [
     "langgraph>=0.3",
     "langchain>=0.3",
-    "langchain-openai>=0.3",
     "langchain-anthropic>=0.3",
-]
-openai = [
-    "openai>=1.60",
 ]
 neuro-san = [
     "neuro-san>=0.5",

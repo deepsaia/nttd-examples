@@ -23,7 +23,6 @@ file is, which is stated here rather than left for somebody to discover the way 
 from __future__ import annotations
 
 import os
-import re
 
 import pytest
 import requests
@@ -41,6 +40,10 @@ USED_PATHS = (
     "/state/full",
     "/state/compact",
     "/state/gs/query",
+    "/state/towns",
+    "/state/industries",
+    "/state/vehicles",
+    "/state/stations",
     "/actions/available",
     "/actions/submit",
     "/actions/submit-batch",
@@ -165,5 +168,8 @@ class TestTheActionsTheClientDocuments:
         source = module.__doc__ or ""
         for method in vars(NttdClient).values():
             source += getattr(method, "__doc__", None) or ""
-        for gone in (r"\bbuild_road\b", r"\bbuild_rail\b", r"\bbuild_road_line\b"):
-            assert not re.search(gone, source), f"docstring names {gone}, which nttd removed"
+        # Split into words rather than matched with a pattern: `build_road` must not
+        # also flag `build_road_stop`, and word splitting says that plainly.
+        words = set(source.replace("`", " ").replace(",", " ").replace(".", " ").split())
+        for gone in ("build_road", "build_rail", "build_road_line"):
+            assert gone not in words, f"a docstring names {gone}, which nttd removed"
