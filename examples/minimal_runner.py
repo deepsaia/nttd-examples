@@ -9,7 +9,7 @@ the shape, then replace ``decide`` with something that plays.
 
 Get the session and token from nttd:
 
-    uv run nttd session create --config config/benchmark/t2_stepped_example.conf
+    uv run nttd session create --config config/benchmark/t2_256_flat_1001_stepped.conf
     uv run nttd session start -s ses_... --agent-companies 1
     uv run nttd session attach ses_...
 

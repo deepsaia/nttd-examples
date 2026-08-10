@@ -30,7 +30,7 @@ You also need an nttd server and a session to attach to. From an nttd checkout:
 
 ```bash
 uv run nttd server                                                # terminal 1
-uv run nttd session create --config config/benchmark/t2_example.conf
+uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd session start -s ses_... --agent-companies 1
 uv run nttd session attach ses_...    # prints the participant token
 ```
