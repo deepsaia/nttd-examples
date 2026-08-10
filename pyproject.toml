@@ -19,10 +19,13 @@ dependencies = [
 # One LLM example and one multi-agent system, rather than one per framework. The
 # langchain and openai runners were removed: they demonstrated the same loop through a
 # different SDK, and four copies of one idea drift in four directions.
+# langchain 1.x, for create_agent and the middleware hooks. The 0.x prebuilt
+# create_react_agent is deprecated, and langgraph-supervisor still imports it.
 langgraph = [
-    "langgraph>=0.3",
-    "langchain>=0.3",
-    "langchain-anthropic>=0.3",
+    "langchain>=1.3",
+    "langgraph>=1.2",
+    "langchain-anthropic>=1.5",
+    "langgraph-checkpoint-sqlite>=2.0",
 ]
 neuro-san = [
     "neuro-san>=0.5",

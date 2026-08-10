@@ -185,7 +185,7 @@ class TestTheGeneratedPromptOnlyNamesRealActions:
     have. Only the server can confirm that; a fixture would just agree with itself.
     """
 
-    def test_every_action_it_names_is_one_the_session_accepts(self) -> None:
+    def test_every_action_it_names_is_one_the_session_accepts(self, spec: dict) -> None:
         """Checked against `actions/available`, not the manifest `build` reads from.
         Comparing a rendering with its own source would only prove the rendering is
         faithful; this proves the brief is bounded by what the session will really take.
@@ -206,14 +206,14 @@ class TestTheGeneratedPromptOnlyNamesRealActions:
             f"the brief offers {sorted(named - playable)}, which this session refuses"
         )
 
-    def test_it_leaves_out_actions_this_session_would_refuse(self) -> None:
+    def test_it_leaves_out_actions_this_session_would_refuse(self, spec: dict) -> None:
         """The manifest describes operator actions too. Listing one costs a step to
         find out it is refused."""
         client = NttdClient(base_url=BASE_URL, session_id="ses_x", token="pt_x")
         brief = action_brief.build(client)
         assert "change_bank_balance" not in brief
 
-    def test_a_category_filter_narrows_it(self) -> None:
+    def test_a_category_filter_narrows_it(self, spec: dict) -> None:
         """The full surface is around 120 actions. A road runner handed the rail, marine
         and aviation references pays for context it will never call."""
         client = NttdClient(base_url=BASE_URL, session_id="ses_x", token="pt_x")
@@ -245,21 +245,12 @@ class TestTheRunnerActsOnRefusals:
         assert "error" in fields
 
     def test_the_runner_feeds_refusals_back_into_the_next_decision(self) -> None:
-        """Logging a refusal is not acting on one. The planner has to see it, or it
+        """Logging a refusal is not acting on one. The system has to remember it, or it
         proposes the same action next step."""
         import inspect
 
         from examples import langgraph_runner
 
-        assert "refusals" in inspect.getsource(langgraph_runner.play)
-        note = langgraph_runner._refusal_note(
-            [{"action_type": "build_dock", "error": "Invalid tile ID: 1"}],
-        )
-        assert "build_dock" in note
-        assert "Invalid tile ID" in note
-        assert "Do not repeat" in note
-
-    def test_no_refusals_adds_nothing_to_the_prompt(self) -> None:
-        from examples import langgraph_runner
-
-        assert langgraph_runner._refusal_note([]) == ""
+        source = inspect.getsource(langgraph_runner.play)
+        assert "action_results" in source
+        assert "system.learn" in source
