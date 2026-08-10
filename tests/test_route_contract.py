@@ -220,3 +220,46 @@ class TestTheGeneratedPromptOnlyNamesRealActions:
         roads = action_brief.build(client, categories=("road",))
         assert "build_road_stop" in roads
         assert "build_rail_station" not in roads
+
+
+class TestTheRunnerActsOnRefusals:
+    """The dead read that started this, now live.
+
+    `_log_refusals` read result["action_results"], which StepResult did not carry, so
+    every refusal passed unnoticed and the runner had no way to stop proposing the same
+    rejected action. nttd now returns the outcome of each action on the step that
+    flushed it.
+    """
+
+    def test_the_server_returns_action_results_on_a_step(self, spec: dict) -> None:
+        fields = spec["components"]["schemas"]["StepResult"]["properties"]
+        assert "action_results" in fields, (
+            "nttd does not return per-action outcomes, so a runner cannot learn from a "
+            "refusal: the observation alone cannot distinguish a refused action from "
+            "one that was never sent."
+        )
+
+    def test_a_result_names_its_action(self, spec: dict) -> None:
+        fields = spec["components"]["schemas"]["ActionResult"]["properties"]
+        assert "action_type" in fields
+        assert "error" in fields
+
+    def test_the_runner_feeds_refusals_back_into_the_next_decision(self) -> None:
+        """Logging a refusal is not acting on one. The planner has to see it, or it
+        proposes the same action next step."""
+        import inspect
+
+        from examples import langgraph_runner
+
+        assert "refusals" in inspect.getsource(langgraph_runner.play)
+        note = langgraph_runner._refusal_note(
+            [{"action_type": "build_dock", "error": "Invalid tile ID: 1"}],
+        )
+        assert "build_dock" in note
+        assert "Invalid tile ID" in note
+        assert "Do not repeat" in note
+
+    def test_no_refusals_adds_nothing_to_the_prompt(self) -> None:
+        from examples import langgraph_runner
+
+        assert langgraph_runner._refusal_note([]) == ""

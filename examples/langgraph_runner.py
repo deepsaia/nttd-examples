@@ -81,6 +81,7 @@ class RunState(TypedDict):
 
     observation: dict[str, Any]
     step: int
+    refusals: list[dict[str, Any]]
     brief: Annotated[str, "what the surveyor found"]
     plan: Plan
 
@@ -111,7 +112,24 @@ How to play well:
   not the money is working.
 - Doing nothing is a legitimate answer. Return no actions if waiting is right.
 
+{refusals}
 {actions}"""
+
+
+def _refusal_note(refusals: list[dict[str, Any]]) -> str:
+    """What the last step refused, for the planner.
+
+    Named actions with their reasons rather than a count, because "one action failed"
+    tells a model to try again while "build_dock was refused: invalid tile" tells it to
+    try something else.
+    """
+    if not refusals:
+        return ""
+    lines = "\n".join(
+        f"- {r.get('action_type') or 'action'}: {r.get('error') or 'no reason given'}"
+        for r in refusals
+    )
+    return f"Your last step had actions refused. Do not repeat them unchanged:\n{lines}\n"
 
 
 def build_graph(tools: NttdTools) -> Any:
@@ -142,7 +160,11 @@ def build_graph(tools: NttdTools) -> Any:
         return {"brief": reply["messages"][-1].content}
 
     def plan(state: RunState) -> dict[str, Plan]:
-        prompt = PLAN_PROMPT.format(brief=state["brief"], actions=actions)
+        prompt = PLAN_PROMPT.format(
+            brief=state["brief"],
+            refusals=_refusal_note(state.get("refusals") or []),
+            actions=actions,
+        )
         return {"plan": planner.invoke(prompt)}
 
     graph = StateGraph(RunState)
@@ -157,16 +179,24 @@ def build_graph(tools: NttdTools) -> Any:
 def play(client: NttdClient, graph: Any, max_steps: int) -> dict[str, Any]:
     """Step until the scenario ends the run, or the safety limit trips."""
     result = client.reset()
+    refusals: list[dict[str, Any]] = []
 
     for step in range(max_steps):
         decision: Plan = graph.invoke({
-            "observation": result["snapshot"], "step": step,
+            "observation": result["snapshot"], "step": step, "refusals": refusals,
         })["plan"]
 
         logger.info("Step %d: %s", step, decision.reasoning)
         result = client.step(
             [{"action": a.action, "params": a.params} for a in decision.actions],
         )
+        # Fed back into the next decision. Without this the model proposes the same
+        # refused action every step, because nothing in the observation records that it
+        # was refused.
+        refusals = [
+            r for r in (result.get("action_results") or [])
+            if r.get("status") != "success"
+        ]
 
         # Refusals are recorded and worth watching: a policy whose actions are mostly
         # refused is failing in a way its score will not explain.
@@ -181,12 +211,23 @@ def play(client: NttdClient, graph: Any, max_steps: int) -> dict[str, Any]:
 
 
 def _log_refusals(result: dict[str, Any]) -> None:
+    """Say which actions were refused, and why.
+
+    This read `result["action_results"]` before nttd returned any, so it was dead code
+    and every refusal passed unnoticed. A refused action often changes nothing in the
+    world, so an agent watching only the observation cannot tell a refusal from an
+    action it never sent.
+    """
     for outcome in result.get("action_results") or []:
-        if outcome.get("status") != "success":
-            logger.warning(
-                "  refused %s: %s",
-                outcome.get("action_type"), outcome.get("error") or "no reason given",
-            )
+        if outcome.get("status") == "success":
+            continue
+        named = outcome.get("error_name") or outcome.get("error_category") or ""
+        logger.warning(
+            "  refused %s%s: %s",
+            outcome.get("action_type") or "action",
+            f" [{named}]" if named else "",
+            outcome.get("error") or "no reason given",
+        )
 
 
 def main() -> int:
