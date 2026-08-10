@@ -41,7 +41,7 @@ from typing import Annotated, Any, TypedDict
 
 from pydantic import BaseModel, Field
 
-from agents import action_brief
+from agents import action_brief, strategy_loader
 from agents.nttd_client import NttdClient
 from agents.tools import NttdTools
 
@@ -49,10 +49,15 @@ logger = logging.getLogger("langgraph")
 
 MODEL = "claude-sonnet-5"
 
-# The slice of nttd's surface this runner plays. Narrowed deliberately: the full
-# catalogue is around 120 actions, and a road-and-buses runner handed the rail, marine
-# and aviation references as well pays for context it will never call.
-CATEGORIES = ("road", "vehicle", "orders", "company", "query")
+# The slice of nttd's surface each mode plays. Narrowed deliberately: the full catalogue
+# is around 120 actions, and a road runner handed the rail, marine and aviation
+# references as well pays for context it will never call.
+CATEGORIES = {
+    "road": ("road", "vehicle", "orders", "company", "query"),
+    "rail": ("rail", "vehicle", "orders", "company", "query"),
+    "water": ("marine", "vehicle", "orders", "company", "query"),
+    "air": ("aviation", "vehicle", "orders", "company", "query"),
+}
 
 
 class Action(BaseModel):
@@ -94,23 +99,16 @@ most eight lines of findings. No recommendations, no strategy: the planner decid
 
 Game date: {date}. Step {step}."""
 
-# Strategy only. What each action is and what it takes comes from `action_brief`, which
-# generates it from nttd's manifest, so this never restates something that can change.
-# The file this replaced was 47,000 characters of hand-written reference and had already
-# drifted: it still told models to call `build_rail`, which nttd deleted.
+# Strategy comes from agents/strategy/*.md, hand-written and short. The action reference
+# comes from action_brief, generated from nttd's manifest. Keeping the two apart is the
+# point: the file this replaced mixed them, so its reference half went stale while its
+# strategy half was buried where nobody could edit it.
 PLAN_PROMPT = """You run a transport company in OpenTTD. Decide what to do this step.
 
 The surveyor reports:
 {brief}
 
-How to play well:
-- Move cargo people want moved. A route earns on what it delivers, and payment falls the
-  longer cargo sits, so a short busy route beats a long idle one.
-- Ask where something fits before building it. Guessing a tile is the commonest way to
-  waste a step.
-- Borrow to build something that will earn, not to hold cash. Interest runs whether or
-  not the money is working.
-- Doing nothing is a legitimate answer. Return no actions if waiting is right.
+{strategy}
 
 {refusals}
 {actions}"""
@@ -132,8 +130,8 @@ def _refusal_note(refusals: list[dict[str, Any]]) -> str:
     return f"Your last step had actions refused. Do not repeat them unchanged:\n{lines}\n"
 
 
-def build_graph(tools: NttdTools) -> Any:
-    """Wire survey and plan into a graph.
+def build_graph(tools: NttdTools, mode: str) -> Any:
+    """Wire survey and plan into a graph for one transport mode.
 
     Built once and reused for every step: the graph is the policy, and the state is what
     changes.
@@ -147,9 +145,11 @@ def build_graph(tools: NttdTools) -> Any:
     )
     planner = ChatAnthropic(model=MODEL, temperature=0.3).with_structured_output(Plan)
 
-    # Fetched once per run, not per step: the action surface cannot change mid-session,
-    # and paying for it on every step would be the largest cost in the loop.
-    actions = action_brief.build(tools.client, categories=CATEGORIES)
+    # Both fetched once per run, not per step: neither the action surface nor the
+    # strategy changes mid-session, and paying for them every step would be the largest
+    # cost in the loop.
+    actions = action_brief.build(tools.client, categories=CATEGORIES[mode])
+    strategy = strategy_loader.load(mode)
 
     def survey(state: RunState) -> dict[str, str]:
         game = state["observation"].get("game", {})
@@ -162,6 +162,7 @@ def build_graph(tools: NttdTools) -> Any:
     def plan(state: RunState) -> dict[str, Plan]:
         prompt = PLAN_PROMPT.format(
             brief=state["brief"],
+            strategy=strategy,
             refusals=_refusal_note(state.get("refusals") or []),
             actions=actions,
         )
@@ -238,15 +239,19 @@ def main() -> int:
     parser.add_argument("--token", required=True)
     parser.add_argument("--url", default="http://127.0.0.1:8000")
     parser.add_argument("--max-steps", type=int, default=200)
+    parser.add_argument(
+        "--mode", default="road", choices=strategy_loader.MODES,
+        help="Which transport mode to play. Road is the easiest to get earning.",
+    )
     args = parser.parse_args()
 
     client = NttdClient(base_url=args.url, session_id=args.session, token=args.token)
-    graph = build_graph(NttdTools(client))
+    graph = build_graph(NttdTools(client), args.mode)
 
     # The model is declared here because nttd cannot see it. Spend is left unreported
     # rather than guessed: an unreported cost shows as blank on the board, which is a
     # different and more honest claim than zero.
-    client.report(model=MODEL, participant_type="mas")
+    client.report(model=MODEL, participant_type="mas", agent_id=f"langgraph-{args.mode}")
 
     result = play(client, graph, max_steps=args.max_steps)
     logger.info("Finished at step %s. Now: nttd submit --session %s",
