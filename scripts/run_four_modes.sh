@@ -10,9 +10,9 @@
 # scored result. Four modes in one session would be one company doing everything, which
 # is the combined system, not four entries.
 #
-# The four run CONCURRENTLY. nttd allocates a port pair per session and was hardened for
-# exactly this, and the wall clock is dominated by the world advance (about two seconds a
-# game-day, so roughly fifteen minutes of advancing per run) which overlaps perfectly.
+# The modes run ONE AFTER ANOTHER, not together. Concurrency would finish sooner, and
+# nttd supports it, but a sequential run keeps one OpenTTD process and one model in
+# flight at a time, so a failure is attributable and the logs read in order.
 #
 # Logs land in logs/<mode>.log. Nothing here submits: `nttd submit` is a separate,
 # deliberate step, and a run worth submitting is worth looking at first.
@@ -42,7 +42,6 @@ start_session () {
   echo "$sid"
 }
 
-pids=()
 for mode in "${MODES[@]}"; do
   sid=$(start_session "$mode") || { echo "$mode: could not start a session"; continue; }
   token=$(cd "$NTTD" && uv run python -c \
@@ -50,14 +49,13 @@ for mode in "${MODES[@]}"; do
   echo "$mode  session=$sid"
   echo "$sid" > "logs/$mode.session"
 
+  echo "  running $mode ..."
   uv run python examples/langgraph_runner.py \
       --session "$sid" --token "$token" --mode "$mode" --url "$URL" \
-      > "logs/$mode.log" 2>&1 &
-  pids+=($!)
+      > "logs/$mode.log" 2>&1
+  echo "  $mode finished at $(date +%H:%M:%S)"
+  (cd "$NTTD" && uv run nttd session stop -s "$sid" >/dev/null 2>&1) || true
 done
-
-echo "Running ${#pids[@]} mode(s). Watch: tail -f logs/*.log"
-for pid in "${pids[@]}"; do wait "$pid"; done
 
 echo
 for mode in "${MODES[@]}"; do
