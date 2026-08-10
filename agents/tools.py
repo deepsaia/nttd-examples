@@ -62,26 +62,90 @@ class NttdTools:
     # ------------------------------------------------------------------
 
     def get_engines(self, vehicle_type: int = 1) -> list[dict[str, Any]]:
-        """Buyable engines of one type. What is buyable is gated by the game year."""
-        return self.client.gs_query(
-            "get_engines", {"vehicle_type": vehicle_type},
-        ).get("result", [])
+        """Buyable engines of one type. What is buyable is gated by the game year.
 
-    def find_bus_stop_spots(self, town_id: int, max_results: int = 5) -> list[dict[str, Any]]:
-        """Road tiles near a town where a stop will fit. ``[{tile, x, y}]``"""
-        return self.client.gs_query(
-            "find_bus_stop_spots", {"town_id": town_id, "max_results": max_results},
-        ).get("result", [])
+        vehicle_type: 0 rail, 1 road, 2 water, 3 air. Entries carry is_wagon and
+        rail_type, so check both: a wagon bought as a locomotive hauls nothing, and an
+        engine of the wrong rail_type cannot run on the track you laid.
+        """
+        return self._gs("get_engines", {"vehicle_type": vehicle_type})
 
-    def find_depot_spots(self, town_id: int, max_results: int = 5) -> list[dict[str, Any]]:
-        """Road tiles near a town where a depot will fit. ``[{tile, x, y}]``"""
-        return self.client.gs_query(
-            "find_depot_spots", {"town_id": town_id, "max_results": max_results},
-        ).get("result", [])
+    def scan_town_area(self, town_id: int, radius: int = 15) -> dict[str, Any]:
+        """What is buildable around a town, what is built, and where the roads run."""
+        return self._gs("scan_town_area", {"town_id": town_id, "radius": radius})
 
     def get_tile_info(self, tile: int) -> dict[str, Any]:
         """Terrain and infrastructure on one tile."""
-        return self.client.gs_query("get_tile_info", {"tile": tile}).get("result", {})
+        return self._gs("get_tile_info", {"tile": tile})
+
+    # ------------------------------------------------------------------
+    # Finders: where something will actually fit
+    # ------------------------------------------------------------------
+    #
+    # These matter more than any other tool here. Each runs a real dry run inside the
+    # game, under your company, with the parameters you gave, so a tile one returns is a
+    # tile the game has already agreed to. Guessing a tile instead is the commonest
+    # wasted step there is.
+    #
+    # Every mode needs its own. A first shakedown run had only the two road finders
+    # exposed, and the rail agent said so in its own reasoning before guessing a tile and
+    # being refused: "the action list I actually have does NOT include find_station_spot".
+
+    def find_bus_stop_spots(self, town_id: int, max_results: int = 5) -> list[dict[str, Any]]:
+        """Road tiles near a town where a bus or truck stop could go."""
+        return self._gs("find_bus_stop_spots", {"town_id": town_id, "max_results": max_results})
+
+    def find_depot_spots(self, town_id: int, max_results: int = 5) -> list[dict[str, Any]]:
+        """Road tiles near a town where a road depot would fit."""
+        return self._gs("find_depot_spots", {"town_id": town_id, "max_results": max_results})
+
+    def find_station_spot(
+        self, town_id: int | None = None, industry_id: int | None = None,
+        platform_length: int = 3, max_results: int = 5,
+    ) -> dict[str, Any]:
+        """Where a rail station serving a town or an industry could go.
+
+        Give industry_id for a cargo route and town_id for passengers. Each spot carries
+        valid_directions: pass one of those as the station's direction, or it builds on
+        an axis the pathfinder cannot join.
+        """
+        params: dict[str, Any] = {
+            "platform_length": platform_length, "max_results": max_results,
+        }
+        if town_id is not None:
+            params["town_id"] = town_id
+        if industry_id is not None:
+            params["industry_id"] = industry_id
+        return self._gs("find_station_spot", params)
+
+    def find_rail_depot_spot(self, tile: int, max_results: int = 3) -> list[dict[str, Any]]:
+        """Where a rail depot would fit near a tile.
+
+        It looks for ground adjacent to existing rail, so it correctly returns nothing
+        before track exists. Ask it after laying track, not before.
+        """
+        return self._gs("find_rail_depot_spot", {"tile": tile, "max_results": max_results})
+
+    def find_dock_spots(self, town_id: int, max_results: int = 5) -> list[dict[str, Any]]:
+        """Coastal tiles near a town where a dock could go, best first."""
+        return self._gs("find_dock_spots", {"town_id": town_id, "max_results": max_results})
+
+    def find_water_depot_spots(self, town_id: int, max_results: int = 5) -> list[dict[str, Any]]:
+        """Water near a town where a ship depot could go."""
+        return self._gs("find_water_depot_spots", {"town_id": town_id, "max_results": max_results})
+
+    def find_airport_spots(
+        self, town_id: int, airport_type: int = 0, max_results: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Where an airport of the given type would fit near a town."""
+        return self._gs(
+            "find_airport_spots",
+            {"town_id": town_id, "airport_type": airport_type, "max_results": max_results},
+        )
+
+    def _gs(self, action: str, params: dict[str, Any]) -> Any:
+        """One GameScript query, unwrapped."""
+        return self.client.gs_query(action, params).get("result", [])
 
     # ------------------------------------------------------------------
     # For an LLM's tool list
@@ -99,8 +163,10 @@ class NttdTools:
 
         readable = (
             "get_towns", "get_industries", "get_vehicles", "get_stations",
-            "get_finance", "get_engines", "find_bus_stop_spots",
-            "find_depot_spots", "get_tile_info",
+            "get_finance", "get_engines", "get_tile_info", "scan_town_area",
+            "find_bus_stop_spots", "find_depot_spots", "find_station_spot",
+            "find_rail_depot_spot", "find_dock_spots", "find_water_depot_spots",
+            "find_airport_spots",
         )
         return [
             StructuredTool.from_function(

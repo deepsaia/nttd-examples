@@ -36,12 +36,19 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from agents.common.middleware import RefusalCache, observation_note, remembering, trimming
+from agents.common.middleware import RefusalCache, observation_note, remembering
 from agents.common.route_ledger import RouteLedger
 from agents.common.schema import ActionBatch, Refusal
 from agents.tools import NttdTools
 
 logger = logging.getLogger(__name__)
+
+# Tool calls allowed per specialist per step. The surveyor is meant to look around, the
+# builder is meant to confirm a tile and act, so they are not the same number. Both are
+# bounds on wall clock rather than on quality: the world advance already costs about two
+# seconds a game-day, and scouting is what turns a step from seconds into minutes.
+_SURVEY_CALLS = 6
+_BUILD_CALLS = 8
 
 SURVEYOR_BRIEF = """You survey an OpenTTD transport company for the rest of the team.
 
@@ -71,6 +78,14 @@ BUILDER_BRIEF = """You carry out one objective for a transport company, as actio
 
 The objective:
 {objective}
+
+You have TOOLS and you have ACTIONS, and they are different things.
+
+TOOLS answer questions and cost nothing: the finders tell you where something will
+actually fit, and they run a real dry run inside the game, so a tile one returns is a
+tile the game has already agreed to. Use them before every build. Never guess a tile.
+
+ACTIONS change the world and are what you return. They are listed at the end.
 
 {strategy}
 
@@ -109,31 +124,54 @@ class ModeSystem:
         """Create the three specialists. Deferred so the class can be inspected and
         tested without a model or an API key."""
         from langchain.agents import create_agent
+        from langchain.agents.middleware import ToolCallLimitMiddleware
         from langchain.agents.structured_output import ToolStrategy
         from langchain_anthropic import ChatAnthropic
 
-        def chat(temperature: float) -> Any:
+        def scouting_limit(calls: int) -> Any:
+            """Cap tool calls per invocation.
+
+            Every finder is a round trip into the running game, and an unbounded
+            scouting loop is the difference between a step taking seconds and taking
+            minutes: a first run with 15 tools and no cap spent over ten minutes on two
+            steps. `continue` rather than `error`, so hitting the cap blocks further
+            scouting and lets the agent answer with what it already learnt.
+            """
+            return ToolCallLimitMiddleware(run_limit=calls, exit_behavior="continue")
+
+        def chat() -> Any:
+            # No temperature: claude-sonnet-5 rejects it outright with "`temperature` is
+            # deprecated for this model". The three specialists were differentiated by
+            # it, and are now differentiated only by their brief, which is where the
+            # real difference always was.
+            #
             # The key is read from ANTHROPIC_API_KEY by the client itself and is never
             # handled here.
-            return ChatAnthropic(model=self._model, temperature=temperature)
+            return ChatAnthropic(model=self._model)
 
         self._surveyor = create_agent(
-            model=chat(0.0),
+            model=chat(),
             tools=self._tools.as_langchain_tools(),
             system_prompt="You report what is, not what should be.",
-            middleware=[trimming()],
+            middleware=[scouting_limit(_SURVEY_CALLS)],
         )
         self._consultant = create_agent(
-            model=chat(0.3),
+            model=chat(),
             tools=[],
             system_prompt="You are a transport company strategist.",
-            middleware=[trimming()],
         )
         self._builder = create_agent(
-            model=chat(0.2),
-            tools=[],
+            model=chat(),
+            # The builder gets the finders too, not just the surveyor. It is the one
+            # choosing tiles, and a brief written in prose cannot carry a tile id
+            # reliably. Without them a first shakedown run reasoned, correctly, that it
+            # had no way to find a station spot, and then guessed one and was refused.
+            tools=self._tools.as_langchain_tools(),
             system_prompt=f"You build {self.mode} infrastructure in OpenTTD.",
-            middleware=[trimming(), remembering(self._ledger)],
+            middleware=[
+                scouting_limit(_BUILD_CALLS),
+                remembering(self._ledger),
+            ],
             # Structured output against a schema, with validation errors fed back so the
             # model corrects itself in the same turn rather than costing a step.
             response_format=ToolStrategy(ActionBatch, handle_errors=True),

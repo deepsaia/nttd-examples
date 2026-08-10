@@ -3,12 +3,20 @@
 Three hooks, each earning its place for a measured reason rather than because the
 framework offers it.
 
-**Trimming is not optional.** A run is hundreds of steps and each carries an observation
-of several kilobytes. Left in the message list, checkpoint storage grows quadratically:
-measured on SqliteSaver with an 8 KB observation, 15 steps came to 3.30 MB, 30 to 10.76,
-45 to 26.94 and 60 to 43.75, which is four times the storage for twice the steps and
-extrapolates to about a gigabyte at 300 steps. Trimming holds it near-linear at 3.86 MB
-by step 60. This has to be designed in from the first step, not retrofitted.
+**There is deliberately no message trimming here, and that is a change of mind.** It was
+written first, on the measurement that a checkpointed thread grows quadratically: with an
+8 KB observation, 15 steps came to 3.30 MB, 30 to 10.76, 45 to 26.94 and 60 to 43.75.
+That measurement is real, but it describes a persistent thread, and this system does not
+have one: every specialist is invoked with a fresh message list each step, so nothing
+accumulates between steps at all.
+
+Worse, trimming actively broke the surveyor. Slicing the last N messages orphans a
+``tool_result`` from the ``tool_use`` it answers, and the API rejects the pair being
+split: "unexpected tool_use_id found in tool_result blocks". So it solved a problem this
+design does not have and created one it does.
+
+When a checkpointer is added, trimming becomes necessary again, and it must then be
+tool-pair aware rather than a blind slice.
 
 **The negative cache replaces a field that never existed.** The prompts this work
 replaces branched on `action_history` and `previous_actions`, neither of which nttd has
@@ -29,38 +37,11 @@ from langchain.agents.middleware import (
     AgentMiddleware,
     ModelRequest,
     after_model,
-    before_model,
 )
-from langchain_core.messages import RemoveMessage
-from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
 from agents.common.route_ledger import RouteLedger
 
 logger = logging.getLogger(__name__)
-
-# How much conversation to carry between steps. The observation and the ledger are
-# re-injected every step, so older messages hold nothing the agent still needs: what it
-# built is in the ledger, and what the world looks like is in the observation.
-_KEEP_MESSAGES = 2
-
-
-def trimming(keep: int = _KEEP_MESSAGES) -> Any:
-    """Drop all but the last few messages before each model call.
-
-    ``RemoveMessage(REMOVE_ALL_MESSAGES)`` followed by the survivors, which is the
-    documented way to replace the list wholesale. Roughly six lines for an eleven-fold
-    reduction in checkpoint size over a sixty-step run.
-    """
-
-    @before_model
-    def _trim(state: dict[str, Any]) -> dict[str, Any] | None:
-        messages = state.get("messages") or []
-        if len(messages) <= keep:
-            return None
-        return {"messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), *messages[-keep:]]}
-
-    return _trim
-
 
 def remembering(ledger: RouteLedger) -> Any:
     """Write what the model said it did into the ledger after each call.
@@ -71,7 +52,7 @@ def remembering(ledger: RouteLedger) -> Any:
     """
 
     @after_model
-    def _remember(state: dict[str, Any]) -> None:
+    def _remember(state: dict[str, Any], runtime: Any) -> None:
         response = state.get("structured_response")
         note = getattr(response, "route_note", "") if response else ""
         if note:
