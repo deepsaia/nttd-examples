@@ -16,6 +16,13 @@ Rail pays best over distance and bulk cargo, and has the most ways to fail silen
 3. Build both stations, passing the `direction` the finder reported. Leaving it to
    default is the classic silent failure: the station builds on the wrong axis and the
    pathfinder cannot join it.
+
+   **Build exactly one platform, three tiles long, and say so explicitly.** The finder
+   dry-runs a one-by-three station, so that is the footprint the game agreed to. The
+   build defaults to a larger one, which needs ground the finder never checked, and the
+   result is a refusal for ground being occupied at a tile the finder just called clear.
+   A first live run failed exactly here: it asked the finder, was given two good tiles,
+   then asked for two platforms and was refused on both.
 4. **Lay the track between the built stations.** Use `connect_rail`, and give it the
    station platform tiles as the hint parameters at each end. That is what makes the
    route join up to your platforms rather than merely reach them.
@@ -46,6 +53,25 @@ orientations from the tiles either side and a stub has no path to imply anything
 Signals are what let more than one train share a line. A single train on a simple
 out-and-back route does not need them; add them when a second train joins.
 
+## Order flags
+
+Leave the flags off for the orders on a new route. A station only starts producing cargo
+once a vehicle has visited it, so a train told to wait for a full load sits in an empty
+station forever, and the route never starts.
+
+## Money
+
+Do not borrow as a first move. Check what the company has, work out what the next build
+costs, and take only the shortfall. Interest runs from the moment you borrow, whether or
+not the money is doing anything.
+
+## Stay in your mode
+
+A rail specialist does not build roads. The road actions exist and would succeed, so this
+is about spending the run on one thing well rather than about what is allowed.
+
 ## Patience
 
 Rail is slow to pay back. Give a new route several hundred game-days before judging it.
+But a step with no actions at all is a step wasted: if your route is running and healthy,
+start the next one rather than waiting.

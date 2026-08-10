@@ -105,9 +105,14 @@ class NttdTools:
     ) -> dict[str, Any]:
         """Where a rail station serving a town or an industry could go.
 
-        Give industry_id for a cargo route and town_id for passengers. Each spot carries
-        valid_directions: pass one of those as the station's direction, or it builds on
-        an axis the pathfinder cannot join.
+        Give industry_id for a cargo route and town_id for passengers.
+
+        Two things about the answer, both of which cost a refused build if missed. Each
+        spot carries valid_directions: pass one of those as the station's direction, or
+        it builds on an axis the pathfinder cannot join. And the dry run is for ONE
+        platform of platform_length tiles, so build with num_platforms=1 and the same
+        length: a bigger station needs ground this never checked, and is refused for
+        occupied ground at a tile just reported clear.
         """
         params: dict[str, Any] = {
             "platform_length": platform_length, "max_results": max_results,
