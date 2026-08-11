@@ -25,8 +25,11 @@ from agents.nttd_client import NttdClient
 class NttdTools:
     """Reads scoped to the company your token owns."""
 
-    def __init__(self, client: NttdClient) -> None:
+    def __init__(self, client: NttdClient, mode: str = "general") -> None:
         self.client = client
+        # Which transport mode's routes to ask for. The route candidates differ per
+        # mode, and a rail agent shown road-only pairs would chase routes it cannot run.
+        self.mode = mode
 
     # ------------------------------------------------------------------
     # From the cached world state
@@ -47,6 +50,15 @@ class NttdTools:
     def get_stations(self) -> list[dict[str, Any]]:
         """Your stations. ``[{id, name, x, y, cargo_waiting, cargo_rating}]``"""
         return self.client.get_state("stations")
+
+    def route_candidates(self) -> dict[str, Any]:
+        """Which routes are worth building for this mode, ranked and unserved.
+
+        Start here. It answers "what should I serve" from nttd's own analysis, so the
+        model spends its thinking on choosing between real options rather than deriving
+        the options from raw towns and industries.
+        """
+        return self.client.route_candidates(agent_type=self.mode)
 
     def get_compact(self) -> dict[str, Any]:
         """A small view of the whole world, for a loop that polls often."""
@@ -167,6 +179,7 @@ class NttdTools:
         from langchain_core.tools import StructuredTool
 
         readable = (
+            "route_candidates",
             "get_towns", "get_industries", "get_vehicles", "get_stations",
             "get_finance", "get_engines", "get_tile_info", "scan_town_area",
             "find_bus_stop_spots", "find_depot_spots", "find_station_spot",

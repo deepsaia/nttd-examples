@@ -60,7 +60,7 @@ def build_system(client: NttdClient, mode: str, run_id: str) -> ModeSystem:
 
     return ModeSystem(
         mode=mode,
-        tools=NttdTools(client),
+        tools=NttdTools(client, mode=mode),
         ledger=RouteLedger(InMemoryStore(), run_id=run_id, mode=mode),
         model=MODEL,
         action_reference=action_brief.build(client, categories=CATEGORIES[mode]),

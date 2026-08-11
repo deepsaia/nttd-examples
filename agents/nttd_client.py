@@ -162,6 +162,25 @@ class NttdClient:
         resp.raise_for_status()
         return resp.json()
 
+    def route_candidates(self, agent_type: str = "general") -> dict[str, Any]:
+        """Which routes are worth building, ranked, filtered to one transport mode.
+
+        Producer and consumer pairs that nobody serves, town pairs scored by demand,
+        distances, and which modes could carry each. This is the question most agents
+        actually have, and nttd computes it already.
+
+        A water route carries ``water_confirmed``. False means the water has not been
+        checked rather than that it is absent: ask ``find_dock_spots``.
+        """
+        resp = requests.get(
+            f"{self._session_url}/state/routes",
+            headers=self._headers,
+            params={"agent_type": agent_type},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def gs_query(self, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Ask the GameScript a read-only question, such as ``find_road_depot_spot``."""
         resp = requests.post(
