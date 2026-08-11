@@ -10,9 +10,11 @@
 # scored result. Four modes in one session would be one company doing everything, which
 # is the combined system, not four entries.
 #
-# The modes run ONE AFTER ANOTHER, not together. Concurrency would finish sooner, and
-# nttd supports it, but a sequential run keeps one OpenTTD process and one model in
-# flight at a time, so a failure is attributable and the logs read in order.
+# The modes run CONCURRENTLY. nttd allocates a port pair per session and was hardened for
+# exactly this. Sequential was right while the system was unproven, because a failure was
+# then attributable; now that a mode completes cleanly, concurrency gives the same early
+# evidence from all four within minutes instead of one at a time, and finishes in roughly
+# the time one run takes.
 #
 # Logs land in logs/<mode>.log. Nothing here submits: `nttd submit` is a separate,
 # deliberate step, and a run worth submitting is worth looking at first.
@@ -42,6 +44,7 @@ start_session () {
   echo "$sid"
 }
 
+pids=()
 for mode in "${MODES[@]}"; do
   sid=$(start_session "$mode") || { echo "$mode: could not start a session"; continue; }
   token=$(cd "$NTTD" && uv run python -c \
@@ -49,11 +52,22 @@ for mode in "${MODES[@]}"; do
   echo "$mode  session=$sid"
   echo "$sid" > "logs/$mode.session"
 
-  echo "  running $mode ..."
-  uv run python examples/langgraph_runner.py \
-      --session "$sid" --token "$token" --mode "$mode" --url "$URL" \
-      > "logs/$mode.log" 2>&1
-  echo "  $mode finished at $(date +%H:%M:%S)"
+  (
+    uv run python examples/langgraph_runner.py \
+        --session "$sid" --token "$token" --mode "$mode" --url "$URL" \
+        > "logs/$mode.log" 2>&1
+    echo "FINISHED $mode at $(date +%H:%M:%S)" >> "logs/$mode.log"
+  ) &
+  pids+=($!)
+done
+
+echo "Running ${#pids[@]} mode(s) concurrently. Watch: tail -f logs/*.log"
+for pid in "${pids[@]}"; do wait "$pid"; done
+
+# Sessions are stopped only after every mode has finished, so a slow mode is never cut
+# short by a fast one completing.
+for mode in "${MODES[@]}"; do
+  sid=$(cat "logs/$mode.session" 2>/dev/null) || continue
   (cd "$NTTD" && uv run nttd session stop -s "$sid" >/dev/null 2>&1) || true
 done
 
