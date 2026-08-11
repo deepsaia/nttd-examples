@@ -43,12 +43,23 @@ from agents.tools import NttdTools
 
 logger = logging.getLogger(__name__)
 
-# Tool calls allowed per specialist per step. The surveyor is meant to look around, the
-# builder is meant to confirm a tile and act, so they are not the same number. Both are
-# bounds on wall clock rather than on quality: the world advance already costs about two
-# seconds a game-day, and scouting is what turns a step from seconds into minutes.
-_SURVEY_CALLS = 6
-_BUILD_CALLS = 8
+# How many super-steps a specialist may take before the graph stops it. Each super-step
+# is one model call plus whatever tools it asked for, so this is the real bound on both
+# cost and wall clock.
+#
+# It replaces ToolCallLimitMiddleware, which was the wrong instrument and expensively so.
+# Its `continue` behaviour blocks the tool that exceeded the cap and lets execution
+# carry on, so the agent simply asked again, was blocked again, and looped: a measured
+# run made 901 model calls across THREE steps, against a design intending three per
+# step, and averaged 20 minutes a step. `end` would stop it but raises
+# NotImplementedError when several tool calls are in flight, which Claude does routinely.
+#
+# A recursion limit is the framework's own bound, cannot be argued with by the model,
+# and needs no middleware.
+_SURVEY_TURNS = 8
+_BUILD_TURNS = 10
+# The consultant has no tools, so one turn to think and one to answer is enough.
+_CONSULT_TURNS = 4
 
 SURVEYOR_BRIEF = """You survey an OpenTTD transport company for the rest of the team.
 
@@ -124,20 +135,8 @@ class ModeSystem:
         """Create the three specialists. Deferred so the class can be inspected and
         tested without a model or an API key."""
         from langchain.agents import create_agent
-        from langchain.agents.middleware import ToolCallLimitMiddleware
         from langchain.agents.structured_output import ToolStrategy
         from langchain_anthropic import ChatAnthropic
-
-        def scouting_limit(calls: int) -> Any:
-            """Cap tool calls per invocation.
-
-            Every finder is a round trip into the running game, and an unbounded
-            scouting loop is the difference between a step taking seconds and taking
-            minutes: a first run with 15 tools and no cap spent over ten minutes on two
-            steps. `continue` rather than `error`, so hitting the cap blocks further
-            scouting and lets the agent answer with what it already learnt.
-            """
-            return ToolCallLimitMiddleware(run_limit=calls, exit_behavior="continue")
 
         def chat() -> Any:
             # No temperature: claude-sonnet-5 rejects it outright with "`temperature` is
@@ -153,7 +152,6 @@ class ModeSystem:
             model=chat(),
             tools=self._tools.as_langchain_tools(),
             system_prompt="You report what is, not what should be.",
-            middleware=[scouting_limit(_SURVEY_CALLS)],
         )
         self._consultant = create_agent(
             model=chat(),
@@ -168,10 +166,7 @@ class ModeSystem:
             # had no way to find a station spot, and then guessed one and was refused.
             tools=self._tools.as_langchain_tools(),
             system_prompt=f"You build {self.mode} infrastructure in OpenTTD.",
-            middleware=[
-                scouting_limit(_BUILD_CALLS),
-                remembering(self._ledger),
-            ],
+            middleware=[remembering(self._ledger)],
             # Structured output against a schema, with validation errors fed back so the
             # model corrects itself in the same turn rather than costing a step.
             response_format=ToolStrategy(ActionBatch, handle_errors=True),
@@ -189,14 +184,25 @@ class ModeSystem:
 
         brief = self._say(self._surveyor, SURVEYOR_BRIEF.format(
             observation=note, ledger=self._ledger.summary(),
-        ))
+        ), _SURVEY_TURNS)
         objective = self._say(self._consultant, CONSULTANT_BRIEF.format(
             brief=brief, ledger=self._ledger.summary(), mistakes=mistakes,
-        ))
-        result = self._builder.invoke({"messages": [("user", BUILDER_BRIEF.format(
-            objective=objective, strategy=self._strategy,
-            mistakes=mistakes, actions=self._reference,
-        ))]})
+        ), _CONSULT_TURNS)
+        from langgraph.errors import GraphRecursionError
+
+        try:
+            result = self._builder.invoke(
+                {"messages": [("user", BUILDER_BRIEF.format(
+                    objective=objective, strategy=self._strategy,
+                    mistakes=mistakes, actions=self._reference,
+                ))]},
+                config={"recursion_limit": _BUILD_TURNS},
+            )
+        except GraphRecursionError:
+            # A builder that scouted until its budget ran out proposed nothing. Waiting
+            # is a legitimate step, and it will see the same world again next time.
+            logger.warning("%s builder hit its turn budget; waiting this step", self.mode)
+            return ActionBatch(reasoning="turn budget exhausted while scouting", actions=[])
 
         batch = result.get("structured_response")
         if batch is None:
@@ -218,8 +224,25 @@ class ModeSystem:
 
     # ------------------------------------------------------------------
 
-    def _say(self, agent: Any, prompt: str) -> str:
-        return agent.invoke({"messages": [("user", prompt)]})["messages"][-1].content
+    def _say(self, agent: Any, prompt: str, turns: int) -> str:
+        """Ask one specialist, bounded.
+
+        Hitting the bound is a normal outcome, not a failure: a surveyor that used its
+        whole budget looking around has still looked around. Raising would end the run
+        over a specialist being thorough, so the exception is caught and the step goes
+        on with whatever was learnt.
+        """
+        from langgraph.errors import GraphRecursionError
+
+        try:
+            result = agent.invoke(
+                {"messages": [("user", prompt)]},
+                config={"recursion_limit": turns},
+            )
+        except GraphRecursionError:
+            logger.warning("%s specialist hit its %d turn budget", self.mode, turns)
+            return "No findings: the turn budget ran out before an answer."
+        return result["messages"][-1].content
 
     def _mistake_note(self) -> str:
         """Repeated refusals, in the words most likely to change behaviour.

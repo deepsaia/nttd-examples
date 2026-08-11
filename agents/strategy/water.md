@@ -36,12 +36,12 @@ the terrain before committing, or accept the risk of a stranded ship.
 
 ## Laying water routes
 
-There is no path-laying action for water. `build_path` with a water transport type does
-nothing at all and reports success, which is worse than an error: it will look like the
-route was laid. Canals are laid tile by tile, and slopes need locks.
+Most useful water routes need no building at all: open water between two coastal towns is
+already navigable, so look for that pair first and simply place the two docks.
 
-Most useful water routes need no canal: open water between two coastal towns is the case
-to look for first.
+Where water has to be cut, `build_path` with a water transport type lays canals and locks
+along the tiles you give it, and reports which of them failed. It used to report success
+having built nothing, so treat any older advice about it as wrong.
 
 ## Buoys
 
