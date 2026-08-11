@@ -162,6 +162,35 @@ class NttdClient:
         resp.raise_for_status()
         return resp.json()
 
+    def situation(self) -> dict[str, Any]:
+        """Where the company stands, computed by nttd rather than derived by a model.
+
+        Money and headroom, what is built, what earns, per-route health, and a list of
+        problems each carrying why it matters. Read ``problems`` first: they are the
+        states that look like progress and earn nothing.
+        """
+        resp = requests.get(
+            f"{self._session_url}/state/situation", headers=self._headers, timeout=20,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def validate_actions(self, actions: list[dict[str, Any]]) -> dict[str, Any]:
+        """Check a batch before spending a step on it.
+
+        The mechanical half of validation, and free: does the action exist, does it take
+        these parameters, is it playable at this tier. Costs nothing to ask and saves a
+        whole step when the answer is no.
+        """
+        resp = requests.post(
+            f"{self._session_url}/actions/interpret/validate",
+            headers=self._headers,
+            json={"actions": actions},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def route_candidates(self, agent_type: str = "general") -> dict[str, Any]:
         """Which routes are worth building, ranked, filtered to one transport mode.
 

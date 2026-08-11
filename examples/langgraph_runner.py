@@ -5,11 +5,17 @@
     export ANTHROPIC_API_KEY=...
     uv run python examples/langgraph_runner.py --session ses_... --token pt_... --mode rail
 
-Each mode is its own multi-agent system: a coded orchestrator over three specialists,
-sharing one memory. A surveyor reads the world, a consultant decides the objective, a
-builder turns that into actions. Surveyor and consultant are common to all four modes,
-because reading a balance sheet and judging whether a corridor pays are the same problems
-whether cargo moves by rail or by ship. Only the builder differs.
+Each mode is its own multi-agent system: a coded orchestrator over four agents, on a base
+of Python tools that compute rather than describe.
+
+nttd states the facts. `state/situation` gives money, what is built, what earns, per-route
+health and a list of problems; `state/routes` gives which pairs are worth serving; the
+finders dry-run the real build to say where something fits. None of that needs a model.
+
+The models exercise judgement: an observer says what matters, a consultant chooses the
+objective, a builder turns it into actions, a validator checks the batch makes sense.
+Observer, consultant and validator are identical across the four modes, because judging
+whether a corridor pays is the same problem whether cargo moves by rail or by ship.
 
 **One company, one batch, one step.** However many agents deliberate, nttd sees a single
 stepper. That is what makes the orchestrator an arbitrator rather than a fan-out, and it
@@ -73,7 +79,7 @@ def play(client: NttdClient, system: ModeSystem, max_steps: int) -> dict[str, An
     result = client.reset()
 
     for step in range(max_steps):
-        batch = system.decide(result["snapshot"])
+        batch = system.decide()
         logger.info("Step %d: %s", step, batch.reasoning)
 
         result = client.step(

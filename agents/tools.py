@@ -51,6 +51,14 @@ class NttdTools:
         """Your stations. ``[{id, name, x, y, cargo_waiting, cargo_rating}]``"""
         return self.client.get_state("stations")
 
+    def situation(self) -> dict[str, Any]:
+        """Where the company stands: money, what is built, what earns, what is wrong.
+
+        Computed by nttd, so the numbers are right and cost no thinking. The `problems`
+        list is the part to act on.
+        """
+        return self.client.situation()
+
     def route_candidates(self) -> dict[str, Any]:
         """Which routes are worth building for this mode, ranked and unserved.
 
@@ -168,6 +176,18 @@ class NttdTools:
     # For an LLM's tool list
     # ------------------------------------------------------------------
 
+    def for_building(self) -> list[Any]:
+        """The subset a builder needs: what to serve, and where it fits.
+
+        The builder was given all sixteen reads and spent its whole turn budget
+        re-deriving what the surveyor had already established, producing no actions at
+        all on half the steps. Choosing the route is the consultant's job; the builder
+        only has to confirm a site and act.
+        """
+        wanted = {"situation", "route_candidates",
+                  *[n for n in dir(self) if n.startswith("find_")]}
+        return [t for t in self.as_langchain_tools() if t.name in wanted]
+
     def as_langchain_tools(self) -> list[Any]:
         """These reads, wrapped as LangChain tools.
 
@@ -179,7 +199,7 @@ class NttdTools:
         from langchain_core.tools import StructuredTool
 
         readable = (
-            "route_candidates",
+            "situation", "route_candidates",
             "get_towns", "get_industries", "get_vehicles", "get_stations",
             "get_finance", "get_engines", "get_tile_info", "scan_town_area",
             "find_bus_stop_spots", "find_depot_spots", "find_station_spot",
