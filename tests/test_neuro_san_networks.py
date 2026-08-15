@@ -157,3 +157,50 @@ class TestTheLoop:
         for name in NETWORKS:
             body = (_REGISTRIES / f"{name}.hocon").read_text()
             assert "advances the world by one day" in body, name
+
+
+class TestTheGateway:
+    """The verbs have to match nttd's routes, and a mismatch only shows up at run time.
+
+    Measured against a live session: `state/gs/query` answered 405 Method Not Allowed to a
+    GET. It reads like a GET, being read-only and costing no game time, but an action's
+    arguments are structured, so they travel as a body and the call is a POST.
+    """
+
+    def test_a_query_is_a_post_that_unwraps_the_result(self) -> None:
+        import inspect
+
+        from agents.neuro_san.coded_tools.nttd_gateway import NttdGateway
+
+        source = inspect.getsource(NttdGateway.query)
+        assert "client.post(" in source, "a GET here answers 405"
+        assert 'params={"action": action}' in source, "the action is a query parameter"
+        assert 'json=params or {}' in source, "its arguments are the body"
+        assert '.get("result")' in source, "the payload arrives wrapped"
+
+    def test_the_full_state_is_a_get(self) -> None:
+        import inspect
+
+        from agents.neuro_san.coded_tools.nttd_gateway import NttdGateway
+
+        assert "client.get(" in inspect.getsource(NttdGateway.observe)
+
+    def test_a_step_reads_its_own_results(self) -> None:
+        import inspect
+
+        from agents.neuro_san.coded_tools.nttd_gateway import NttdGateway
+
+        assert '"action_results"' in inspect.getsource(NttdGateway.act)
+
+    def test_credentials_come_from_sly_data_and_are_required(self) -> None:
+        """They address the company, and neuro-san keeps sly_data out of the chat stream."""
+        import pytest as _pytest
+
+        from agents.neuro_san.coded_tools.nttd_gateway import NttdGateway
+
+        gateway = NttdGateway({"session_id": "20260815-171604ist-peppy-finch", "token": "pt_x"})
+        assert "20260815-171604ist-peppy-finch" in gateway._root
+        assert gateway._headers["Authorization"] == "Bearer pt_x"
+
+        with _pytest.raises(ValueError):
+            NttdGateway({})

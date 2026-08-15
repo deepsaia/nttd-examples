@@ -45,15 +45,24 @@ class NttdGateway:
         return f"{BASE_URL}/v1/participant/sessions/{self._session}"
 
     async def query(self, action: str, params: dict[str, Any] | None = None) -> Any:
-        """A read-only observation. Free: it needs no game ticks and works while paused."""
+        """A read-only observation. Free: it needs no game ticks and works while paused.
+
+        POST, with the action as a query parameter and its arguments as the body. A GET
+        answers 405 here, which is worth stating because the shape reads like a GET: it is
+        read-only, it changes nothing, and it costs no game time. The body is why it is a
+        POST, since an action's arguments are structured rather than flat.
+
+        The payload comes back wrapped as {"result": ...}; callers want the contents.
+        """
         async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
-            reply = await client.get(
+            reply = await client.post(
                 f"{self._root}/state/gs/query",
-                params={"action": action, **(params or {})},
+                params={"action": action},
+                json=params or {},
                 headers=self._headers,
             )
             reply.raise_for_status()
-            return reply.json()
+            return reply.json().get("result")
 
     async def observe(self) -> dict[str, Any]:
         """The whole game state, which is what nttd returns rather than a projection."""
@@ -80,7 +89,10 @@ class NttdGateway:
                 f"{self._root}/step", json={"actions": actions}, headers=self._headers
             )
             reply.raise_for_status()
-            return reply.json()
+            # One entry per action, under action_results. The step also returns the fresh
+            # observation, which is how a result is seen: nttd executes the batch, advances
+            # a day, and answers with what the world looks like afterwards.
+            return reply.json().get("action_results") or []
 
     @staticmethod
     def envelope(action: str, **params: Any) -> dict[str, Any]:
