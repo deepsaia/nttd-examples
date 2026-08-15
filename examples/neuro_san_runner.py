@@ -5,9 +5,13 @@
 Talks to a running neuro-san server over HTTP, so the agents are served by neuro-san and
 this file only takes the turn. Start the server first, from this repository:
 
-    export AGENT_MANIFEST_FILE=registries/manifest.hocon
-    export AGENT_TOOL_PATH=agents/neuro_san/coded_tools
-    uv run python -m neuro_san.service.main_loop.server_main_loop
+    cp .env.example .env      # fill in ANTHROPIC_API_KEY
+    uv run ns run --server-only
+
+`ns` comes from neuro-san-studio and loads the project-root .env before starting, which is
+why the manifest path, the tool path and the key are not exported by hand here. Drop
+--server-only to get the nsflow UI at http://localhost:4173 as well, which is worth having
+the first time: it draws the network and shows each agent's reasoning as it runs.
 
 The loop is deliberately thin, and everything it does is a decision nttd forces rather than
 one this file makes. neuro-san holds the agents; the coded tools hold the traps; this holds

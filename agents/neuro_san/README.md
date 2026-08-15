@@ -43,5 +43,14 @@ every mode. Five copies of one rule become five different rules, so there is one
 
 ```bash
 uv sync --extra neuro-san
-uv run python -m examples.neuro_san_runner --session <session> --token <token> --network nttd_air
+cp .env.example .env                 # fill in ANTHROPIC_API_KEY
+
+uv run ns run --server-only          # terminal A: serves the networks on :8080
+uv run python -m examples.neuro_san_runner \
+    --session <session> --token <token> --network nttd_air   # terminal B
 ```
+
+`ns` is neuro-san-studio's launcher. It loads the project-root `.env` before starting, so
+the manifest path, the tool path and the model key are configured in one file rather than
+exported per terminal. Without `--server-only` it also serves the nsflow UI at
+http://localhost:4173, which draws the network and shows each agent's reasoning as it runs.
