@@ -2,6 +2,13 @@
 
     uv run python -m examples.neuro_san_runner --session <id> --token <token> --steps 40
 
+Talks to a running neuro-san server over HTTP, so the agents are served by neuro-san and
+this file only takes the turn. Start the server first, from this repository:
+
+    export AGENT_MANIFEST_FILE=registries/manifest.hocon
+    export AGENT_TOOL_PATH=agents/neuro_san/coded_tools
+    uv run python -m neuro_san.service.main_loop.server_main_loop
+
 The loop is deliberately thin, and everything it does is a decision nttd forces rather than
 one this file makes. neuro-san holds the agents; the coded tools hold the traps; this holds
 the turn.
@@ -22,28 +29,38 @@ logger = logging.getLogger("nttd.neuro_san")
 DEFAULT_NETWORK = "nttd_air"
 
 
-async def play(session: str, token: str, network: str, steps: int) -> int:
+async def play(
+    session: str, token: str, network: str, steps: int, host: str, port: int
+) -> int:
     """Run the network once per step until the budget or the session runs out."""
-    from neuro_san.session.direct_agent_session import DirectAgentSession  # noqa: PLC0415
+    from neuro_san.session.http_service_agent_session import (  # noqa: PLC0415
+        HttpServiceAgentSession,
+    )
 
     sly_data = {"session_id": session, "token": token}
-    agent = DirectAgentSession(agent_name=network)
+    agent = HttpServiceAgentSession(
+        host=host, port=str(port), agent_name=network, streaming_timeout_in_seconds=900
+    )
 
     for step in range(1, steps + 1):
-        reply = await asyncio.to_thread(
-            agent.streaming_chat,
-            {
-                "user_message": {
-                    "type": "AGENT_FRAMEWORK",
-                    "text": (
-                        "Take the next step in this session. Read the position first, fix "
-                        "what is broken before building anything new, and say what you did."
-                    ),
-                },
-                "sly_data": sly_data,
-            },
+        # streaming_chat yields as the network thinks, so it is drained on a thread and
+        # the last thing said is the answer.
+        replies = await asyncio.to_thread(
+            lambda: list(
+                agent.streaming_chat({
+                    "user_message": {
+                        "type": "AGENT_FRAMEWORK",
+                        "text": (
+                            "Take the next step in this session. Read the position first, "
+                            "fix what is broken before building anything new, and say what "
+                            "you did."
+                        ),
+                    },
+                    "sly_data": sly_data,
+                })
+            )
         )
-        said = _last_text(reply)
+        said = _last_text(replies)
         logger.info("step %d: %s", step, said)
         print(f"  step {step}: {said}")
 
@@ -71,13 +88,17 @@ def main() -> int:
     parser.add_argument("--token", default=os.environ.get("NTTD_TOKEN", ""), help="Participant token")
     parser.add_argument("--network", default=DEFAULT_NETWORK, help="Which agent network to run")
     parser.add_argument("--steps", type=int, default=40, help="How many steps to take")
+    parser.add_argument("--host", default="localhost", help="Where neuro-san is serving")
+    parser.add_argument("--port", type=int, default=8080, help="neuro-san HTTP port")
     args = parser.parse_args()
 
     if not args.token:
         parser.error("a participant token is required: --token or NTTD_TOKEN")
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    return asyncio.run(play(args.session, args.token, args.network, args.steps))
+    return asyncio.run(
+        play(args.session, args.token, args.network, args.steps, args.host, args.port)
+    )
 
 
 if __name__ == "__main__":
