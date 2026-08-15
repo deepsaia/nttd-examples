@@ -1,0 +1,10 @@
+# The agent networks neuro-san serves. One per transport mode, plus the portfolio.
+#
+# They share their tools and their ground rules and differ only in what Expansion is told to
+# build, which is the point: the traps are in the coded tools, where they are deterministic
+# and tested, rather than repeated across five sets of prose that would drift apart.
+{
+    "nttd_air.hocon": true
+    "nttd_ground.hocon": true
+    "nttd_portfolio.hocon": true
+}

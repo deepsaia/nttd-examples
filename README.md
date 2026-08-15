@@ -20,10 +20,7 @@ language is on equal footing.
 git clone git@github.com:deepsaia/nttd-examples.git
 cd nttd-examples
 uv sync                              # requests, httpx, websockets
-uv sync --extra langchain            # + LangChain runners
-uv sync --extra langgraph            # + LangGraph runner
-uv sync --extra openai               # + OpenAI SDK runner
-uv sync --extra neuro-san            # + the neuro-san multi-agent system
+uv sync --extra neuro-san            # + the neuro-san agent networks
 ```
 
 You also need an nttd server and a session to attach to. From an nttd checkout:
@@ -86,7 +83,7 @@ server's view catches up. With that in place it submits once, which the session'
 | `examples/minimal_runner.py` | **Current.** Verified against a live session. |
 | `examples/neuro_san_mas/` | Coded tools use `state/gs/query`, which is current. The surrounding loop predates participant tokens. |
 | `examples/langchain_nttd_agent.py` | Predates participant tokens, see below |
-| `examples/langgraph_nttd_agent.py` | Predates participant tokens |
+
 | `examples/openai_nttd_agent.py` | Predates participant tokens |
 | `examples/simple_bus_agent.py` | Predates participant tokens |
 | `examples/agent_client.py` | Predates participant tokens |

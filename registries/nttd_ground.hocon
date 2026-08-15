@@ -1,0 +1,147 @@
+include "registries/nttd_aaosa.hocon"
+
+metadata {
+    description = "Plays one nttd session on the ground or the water: road, rail or ship. These modes depend on a junction between a depot and a line, which is the thing hardest to confirm before spending on it."
+    tags = ["nttd", "road", "rail", "water"]
+    sample_queries = [
+        "Take the next step in this session.",
+        "What should I build first?",
+        "Something is wrong: nothing is being delivered.",
+    ]
+}
+
+tools = [
+    # The front man. It talks to the runner and holds no tools of its own beyond its
+    # down-chain agents: it cannot use a coded tool class, by neuro-san's rule.
+    {
+        name = "GroundNetwork"
+        function {
+            description = """
+Plays one step of an nttd session by road, rail or ship: decides what to do now and does it.
+"""
+        }
+        instructions = """
+You run one surface transport company for a single step of a benchmark session.
+The mode you are playing is given to you by the runner: road, rail or water.
+
+Work in this order and do not skip:
+1. Ask Position where the company stands. Never assume, and never carry a number over from
+   a previous step.
+2. If Position reports problems, fix those before building anything new. A vehicle that is
+   lost, has no orders or is not moving is money already spent that is earning nothing, and
+   it is always cheaper to fix than to replace.
+3. Otherwise ask Expansion what to build next.
+
+Stop building and hold cash when Position says there are fewer days left than a vehicle
+needs to pay for itself. Report what you did in two or three sentences.
+""" ${nttd_ground_rules} ${aaosa_instructions}
+        tools = ["Position", "Expansion"]
+    }
+
+    {
+        name = "Position"
+        function = ${aaosa_call}{
+            description = "Where the company stands right now, and what is going wrong."
+        }
+        instructions = """
+Call read_position and report what it returns. Do no arithmetic of your own: every figure
+you need is already computed, and a number you work out yourself is a number nothing checks.
+
+Say plainly which problems matter most. A vehicle that is lost or not moving outranks a
+station that is merely busy.
+"""
+        tools = ["read_position"]
+    }
+
+    {
+        name = "Expansion"
+        function = ${aaosa_call}{
+            description = "Chooses what to build next and builds it."
+        }
+        instructions = """
+You decide where this company grows next, and you commit the money.
+
+Road first, when the mode allows it. Towns arrive with roads, so most of a corridor already
+exists: one measured route needed 6 tiles built out of 25, which makes buses the fastest
+way to a positive balance. One town pair saturates at three or four buses, so growth is
+more pairs, not more buses on the same pair.
+
+Whatever you build, in this order:
+1. Call rank_sites for the mode to get candidate towns.
+2. Build the stops or platforms and connect them.
+3. Call verify_reachable from where the vehicle will START to where it must GO, and read
+   tiles_reachable. One tile means the stop is connected to nothing and the vehicle will
+   sit in its depot: this is the failure that looks exactly like success.
+4. Only then call buy_and_dispatch.
+
+For rail specifically: put the depot against the MIDDLE of the corridor, not beside a
+platform. A depot beside a platform joins that station's own stub of track, reaching a
+handful of tiles of a line that is otherwise fine, and the train never leaves. A corridor
+that crosses water fails as a tunnel error and needs a bridge whose two heads sit at the
+same height.
+""" ${aaosa_instructions}
+        tools = ["rank_sites", "buy_and_dispatch", "verify_reachable"]
+    }
+
+    {
+        name = "read_position"
+        function = {
+            description = "Money, fleet, stations, days left, and every problem worth acting on."
+        }
+        class = "read_position.ReadPosition"
+    }
+    {
+        name = "rank_sites"
+        function = {
+            description = "Places worth building, best first, with the unviable ones already removed."
+            parameters = {
+                type = "object"
+                properties = {
+                    mode = { type = "string", description = "air, road, water or rail" }
+                    limit = { type = "integer", description = "How many to return" }
+                }
+                required = ["mode"]
+            }
+        }
+        class = "rank_sites.RankSites"
+    }
+    {
+        name = "buy_and_dispatch"
+        function = {
+            description = "Buys one vehicle, orders it between stations, and leaves it running."
+            parameters = {
+                type = "object"
+                properties = {
+                    engine_id = { type = "integer", description = "Which engine to buy" }
+                    depot_x = { type = "integer", description = "Depot or hangar x" }
+                    depot_y = { type = "integer", description = "Depot or hangar y" }
+                    station_ids = {
+                        type = "array"
+                        items = { type = "integer" }
+                        description = "The stations to order it between, in order"
+                    }
+                }
+                required = ["engine_id", "depot_x", "depot_y", "station_ids"]
+            }
+        }
+        class = "buy_and_dispatch.BuyAndDispatch"
+    }
+    {
+        name = "verify_reachable"
+        function = {
+            description = "Whether a vehicle starting at one point can actually reach another."
+            parameters = {
+                type = "object"
+                properties = {
+                    from_x = { type = "integer" }
+                    from_y = { type = "integer" }
+                    to_x = { type = "integer" }
+                    to_y = { type = "integer" }
+                    transport_type = { type = "string", description = "road, rail or water" }
+                }
+                required = ["from_x", "from_y", "to_x", "to_y", "transport_type"]
+            }
+        }
+        class = "verify_reachable.VerifyReachable"
+    }
+]

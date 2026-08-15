@@ -1,0 +1,141 @@
+include "registries/nttd_aaosa.hocon"
+
+metadata {
+    description = "Plays one nttd session by air. Aircraft need no infrastructure between their endpoints, which removes the class of failure that stops rail and water, at the cost of expensive vehicles and airports."
+    tags = ["nttd", "air"]
+    sample_queries = [
+        "Take the next step in this session.",
+        "What should I build first?",
+        "Something is wrong: nothing is being delivered.",
+    ]
+}
+
+tools = [
+    # The front man. It talks to the runner and holds no tools of its own beyond its
+    # down-chain agents: it cannot use a coded tool class, by neuro-san's rule.
+    {
+        name = "AirNetwork"
+        function {
+            description = """
+Plays one step of an nttd session using aircraft: decides what to do now and does it.
+"""
+        }
+        instructions = """
+You run one air transport company for a single step of a benchmark session.
+
+Work in this order and do not skip:
+1. Ask Position where the company stands. Never assume, and never carry a number over from
+   a previous step.
+2. If Position reports problems, fix those before building anything new. A vehicle that is
+   lost, has no orders or is not moving is money already spent that is earning nothing, and
+   it is always cheaper to fix than to replace.
+3. Otherwise ask Expansion what to build next.
+
+Stop building and hold cash when Position says there are fewer days left than a vehicle
+needs to pay for itself. Report what you did in two or three sentences.
+""" ${nttd_ground_rules} ${aaosa_instructions}
+        tools = ["Position", "Expansion"]
+    }
+
+    {
+        name = "Position"
+        function = ${aaosa_call}{
+            description = "Where the company stands right now, and what is going wrong."
+        }
+        instructions = """
+Call read_position and report what it returns. Do no arithmetic of your own: every figure
+you need is already computed, and a number you work out yourself is a number nothing checks.
+
+Say plainly which problems matter most. A vehicle that is lost or not moving outranks a
+station that is merely busy.
+"""
+        tools = ["read_position"]
+    }
+
+    {
+        name = "Expansion"
+        function = ${aaosa_call}{
+            description = "Chooses what to build next and builds it."
+        }
+        instructions = """
+You decide where this company grows next, and you commit the money.
+
+1. Call rank_sites with mode "air" to get towns whose airports would actually cover them.
+   Every site it returns is inside its own catchment; sites that are not never appear.
+2. Prefer the largest populations and the longest legs between them. A long leg into a big
+   town is the best thing available in this mode: a single big plane on a 205 tile leg has
+   earned six times what small planes on 35 tile hops earned.
+3. Both endpoints must be real towns. Airport capability is not a reason to choose a
+   destination; population is.
+4. Build the airports, then call buy_and_dispatch for each aircraft. It refuses to buy when
+   there is not enough time left for the vehicle to pay for itself, and that refusal is
+   correct: do not argue with it or work around it.
+
+Match the aircraft to the field. Where a site reports takes_big_planes false, only small
+aircraft may land: a large one crashes, without warning and without a refusal.
+""" ${aaosa_instructions}
+        tools = ["rank_sites", "buy_and_dispatch", "verify_reachable"]
+    }
+
+    {
+        name = "read_position"
+        function = {
+            description = "Money, fleet, stations, days left, and every problem worth acting on."
+        }
+        class = "read_position.ReadPosition"
+    }
+    {
+        name = "rank_sites"
+        function = {
+            description = "Places worth building, best first, with the unviable ones already removed."
+            parameters = {
+                type = "object"
+                properties = {
+                    mode = { type = "string", description = "air, road, water or rail" }
+                    limit = { type = "integer", description = "How many to return" }
+                }
+                required = ["mode"]
+            }
+        }
+        class = "rank_sites.RankSites"
+    }
+    {
+        name = "buy_and_dispatch"
+        function = {
+            description = "Buys one vehicle, orders it between stations, and leaves it running."
+            parameters = {
+                type = "object"
+                properties = {
+                    engine_id = { type = "integer", description = "Which engine to buy" }
+                    depot_x = { type = "integer", description = "Depot or hangar x" }
+                    depot_y = { type = "integer", description = "Depot or hangar y" }
+                    station_ids = {
+                        type = "array"
+                        items = { type = "integer" }
+                        description = "The stations to order it between, in order"
+                    }
+                }
+                required = ["engine_id", "depot_x", "depot_y", "station_ids"]
+            }
+        }
+        class = "buy_and_dispatch.BuyAndDispatch"
+    }
+    {
+        name = "verify_reachable"
+        function = {
+            description = "Whether a vehicle starting at one point can actually reach another."
+            parameters = {
+                type = "object"
+                properties = {
+                    from_x = { type = "integer" }
+                    from_y = { type = "integer" }
+                    to_x = { type = "integer" }
+                    to_y = { type = "integer" }
+                    transport_type = { type = "string", description = "road, rail or water" }
+                }
+                required = ["from_x", "from_y", "to_x", "to_y", "transport_type"]
+            }
+        }
+        class = "verify_reachable.VerifyReachable"
+    }
+]

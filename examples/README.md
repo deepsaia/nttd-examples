@@ -5,7 +5,7 @@ Two worked entries, plus a neuro-san multi-agent system.
 | | |
 |---|---|
 | `minimal_runner.py` | a whole stepped run with no model and no framework. Start here |
-| `langgraph_runner.py` | a LangGraph graph: survey, then plan, submitted as one step |
+| `neuro_san_runner.py` | a neuro-san agent network: reads the position, fixes what is broken, then builds |
 | `neuro_san_mas/` | a neuro-san agent network over the same session |
 
 One per idea rather than one per SDK. There were LangChain, OpenAI and scripted runners
