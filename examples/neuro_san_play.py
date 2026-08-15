@@ -1,6 +1,11 @@
 """Play one nttd session with a neuro-san agent network, until the world ends.
 
-    uv run python -m examples.play_session --session <id> --token <token> --network nttd_air
+    uv run python -m examples.neuro_san_play --session <id> --token <token> --network nttd_air
+
+Named for the system it drives. Everything in it is neuro-san specific: it holds a
+conversation with an agent network over neuro-san's own client, and a different approach,
+scripted or reinforcement learning or anything else, plays the same session through the same
+HTTP surface with none of this file.
 
 **What this loop decides: nothing about the game.** It asks the network for another turn
 while the session is still open, and stops when the session closes. That is the whole of it.

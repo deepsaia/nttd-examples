@@ -47,15 +47,17 @@ cp .env.example .env                 # fill in ANTHROPIC_API_KEY
 
 uv run ns run --server-only          # terminal A: serves the networks on :8080
 
-uv run python -m neuro_san.client.agent_cli \
-    --connection http --agent nttd_air --one_shot \
-    --sly_data '{"session_id": "<session>", "token": "<token>"}'   # terminal B
+uv run python -m examples.neuro_san_play \
+    --session <session> --token <token> --network nttd_air         # terminal B
 ```
 
-There is no bespoke runner. neuro-san's own client carries the session id and token as
-`sly_data`, which keeps them out of the chat stream, and the network plays the whole run in
-one conversation: it decides, calls `let_time_pass` to let the world run, looks at what
-changed, and decides again, until the session reaches its day budget and closes itself.
+`neuro_san_play.py` holds the conversation and nothing else. It asks the network for another
+turn while the session is open and stops when the game closes it; the session id and token
+travel as `sly_data`, out of the chat stream. Turns carry `chat_context` forward, so the
+network remembers what it decided without one turn having to hold a whole game year.
+
+The network plays: it decides, calls `let_time_pass` to let the world run, reads what
+changed, and decides again, until the session reaches its day budget and ends.
 
 **The cadence is the network's decision, not a setting.** An earlier version had a runner
 that woke the agent every 30 game days, which was a number lifted from how the game was

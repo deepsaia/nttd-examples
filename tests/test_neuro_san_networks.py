@@ -127,9 +127,9 @@ class TestTheLoop:
     def test_the_loop_ends_when_the_session_does(self) -> None:
         import inspect
 
-        from examples import play_session
+        from examples import neuro_san_play
 
-        source = inspect.getsource(play_session.play)
+        source = inspect.getsource(neuro_san_play.play)
         assert "_status(session)" in source, "the game says when it is over, not this loop"
         assert "ended" in source
 
@@ -137,9 +137,9 @@ class TestTheLoop:
         """No cadence, no step budget: only a backstop against a network making no progress."""
         import inspect
 
-        from examples import play_session
+        from examples import neuro_san_play
 
-        source = inspect.getsource(play_session)
+        source = inspect.getsource(neuro_san_play)
         body = source.split('"""', 2)[2]
         assert "decide_every" not in body
         assert "max_turns" in body, "a runaway guard is fine; a schedule is not"
@@ -148,9 +148,9 @@ class TestTheLoop:
         """Otherwise every turn is amnesiac and re-derives what it already decided."""
         import inspect
 
-        from examples import play_session
+        from examples import neuro_san_play
 
-        assert "chat_context" in inspect.getsource(play_session.play)
+        assert "chat_context" in inspect.getsource(neuro_san_play.play)
 
     def test_the_networks_know_that_acting_costs_a_day(self) -> None:
         """Stepped play executes a batch and then advances one step, so building costs time."""

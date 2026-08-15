@@ -1,12 +1,15 @@
 # Runners
 
-Two worked entries, plus a neuro-san multi-agent system.
+Two worked entries, named for the approach each one demonstrates.
 
 | | |
 |---|---|
 | `minimal_runner.py` | a whole stepped run with no model and no framework. Start here |
-| the neuro-san networks | driven by `neuro_san.client.agent_cli`, not a runner in this repository. See `agents/neuro_san/README.md` |
-| `neuro_san_mas/` | a neuro-san agent network over the same session |
+| `neuro_san_play.py` | the same run played by the neuro-san agent networks in `agents/neuro_san/` |
+
+Both drive the same HTTP surface, which is the point: nothing about a session assumes what
+is on the other end of it. A scripted policy, a single model, a multi-agent network or a
+learned one all attach the same way.
 
 One per idea rather than one per SDK. There were LangChain, OpenAI and scripted runners
 as well, all demonstrating the same loop through a different client, and four copies of
