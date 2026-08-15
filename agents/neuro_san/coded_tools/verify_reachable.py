@@ -25,7 +25,16 @@ from typing import Any
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
-from agents.neuro_san.coded_tools.nttd_gateway import NttdGateway
+try:
+    # Loaded as part of this repository, which is how the tests import it.
+    from agents.neuro_san.coded_tools.nttd_gateway import NttdGateway
+except ImportError:
+    # Loaded by neuro-san from AGENT_TOOL_PATH, where these modules are siblings and the
+    # package above them is not on the path. Both spellings are needed because
+    # AGENT_TOOL_PATH_ONLY=true deliberately stops a tool resolving from anywhere on
+    # PYTHONPATH, which is what keeps a `class` reference in a HOCON from reaching
+    # arbitrary code.
+    from nttd_gateway import NttdGateway
 
 # A depot that reaches only its own stub answers with a handful of tiles. A working
 # junction reaches most of the corridor, so the test is a share of the line rather than a

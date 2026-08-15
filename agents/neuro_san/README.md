@@ -72,3 +72,10 @@ while a run is going, alongside `nttd monitor`.
 `ns` is neuro-san-studio's launcher: it loads the project-root `.env` before starting, so
 the manifest path, the tool path and the model key live in one file rather than being
 exported per terminal.
+
+`.env.example` sets `AGENT_TOOL_PATH_ONLY=true`. Without it, a HOCON's
+`class = "read_position.ReadPosition"` resolves as a fully-qualified import from anywhere on
+PYTHONPATH, meaning an agent network file could name any importable class in the environment
+and neuro-san would load it. These networks only reference their own tools, so restricting
+resolution costs nothing. Under the restriction the tools load as flat siblings rather than
+as part of this package, which is why each one imports the shared gateway both ways.

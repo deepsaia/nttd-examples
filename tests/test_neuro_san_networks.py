@@ -204,3 +204,50 @@ class TestTheGateway:
 
         with _pytest.raises(ValueError):
             NttdGateway({})
+
+
+class TestToolResolution:
+    """A coded tool has to load both ways, because neuro-san can be told to restrict how.
+
+    With AGENT_TOOL_PATH_ONLY unset, a HOCON's `class = "read_position.ReadPosition"`
+    resolves as a fully-qualified import from anywhere on PYTHONPATH: an agent network file
+    could name any importable class in the environment and it would be loaded. Setting it
+    restricts resolution to AGENT_TOOL_PATH, which is what these networks want, since they
+    only ever reference their own tools.
+
+    Under that restriction the tools are loaded as flat siblings rather than as part of this
+    repository's package, so the import of the shared gateway has to work either way.
+    """
+
+    TOOLS = (
+        "nttd_gateway", "read_position", "rank_sites",
+        "buy_and_dispatch", "let_time_pass", "verify_reachable",
+    )
+
+    def test_each_tool_loads_as_a_flat_sibling(self) -> None:
+        import importlib.util
+        import sys
+
+        pytest.importorskip("neuro_san")
+        directory = _ROOT / "agents" / "neuro_san" / "coded_tools"
+        sys.path.insert(0, str(directory))
+        try:
+            for name in self.TOOLS:
+                spec = importlib.util.spec_from_file_location(name, directory / f"{name}.py")
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[name] = module
+                spec.loader.exec_module(module)
+        finally:
+            sys.path.remove(str(directory))
+            for name in self.TOOLS:
+                sys.modules.pop(name, None)
+
+    def test_each_tool_also_loads_as_part_of_this_package(self) -> None:
+        import importlib
+
+        pytest.importorskip("neuro_san")
+        for name in self.TOOLS:
+            importlib.import_module(f"agents.neuro_san.coded_tools.{name}")
+
+    def test_the_restriction_is_on_by_default_for_anyone_copying_the_env(self) -> None:
+        assert "AGENT_TOOL_PATH_ONLY=true" in (_ROOT / ".env.example").read_text()
