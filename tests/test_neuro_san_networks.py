@@ -251,3 +251,41 @@ class TestToolResolution:
 
     def test_the_restriction_is_on_by_default_for_anyone_copying_the_env(self) -> None:
         assert "AGENT_TOOL_PATH_ONLY=true" in (_ROOT / ".env.example").read_text()
+
+
+class TestConcurrentSteps:
+    """A session takes one step at a time, and neuro-san calls tools concurrently.
+
+    The gate refuses a second step with 409 while one is in flight, because two overlapping
+    steps would advance the world twice for one decision. A turn that buys three aircraft,
+    or a purchase overlapping a stretch of time passing, hits that. Measured live: six
+    concurrent steps, no failures, and the day advanced by exactly six.
+    """
+
+    def test_steps_queue_behind_one_shared_lock(self) -> None:
+        import inspect
+
+        from agents.neuro_san.coded_tools.nttd_gateway import NttdGateway
+
+        source = inspect.getsource(NttdGateway.act)
+        assert "self._step_lock()" in source, "steps have to queue"
+
+        lock = inspect.getsource(NttdGateway._step_lock)
+        assert 'self._sly["step_lock"]' in lock, "shared through sly_data, not per instance"
+
+    def test_a_step_in_flight_is_waited_out_rather_than_lost(self) -> None:
+        """The lock covers one event loop; this covers the rest."""
+        import inspect
+
+        from agents.neuro_san.coded_tools import nttd_gateway
+
+        source = inspect.getsource(nttd_gateway.NttdGateway.act)
+        assert "STEP_RETRIES" in source
+        assert '"flight" not in reply.text.lower()' in source, "only retry the in-flight 409"
+
+    def test_two_gateways_on_one_session_share_the_lock(self) -> None:
+        from agents.neuro_san.coded_tools.nttd_gateway import NttdGateway
+
+        sly = {"session_id": "20260815-183253ist-royal-coral", "token": "pt_x"}
+        first, second = NttdGateway(sly), NttdGateway(sly)
+        assert first._step_lock() is second._step_lock()

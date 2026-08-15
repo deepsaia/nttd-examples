@@ -15,6 +15,7 @@ token identify the company and are not something a model should see, restate or 
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -22,6 +23,10 @@ import httpx
 
 BASE_URL = os.environ.get("NTTD_API_URL", "http://127.0.0.1:8000")
 TIMEOUT_SECONDS = float(os.environ.get("NTTD_TIMEOUT_SECONDS", "900"))
+
+# How many times to wait out a step that is already in flight. A step takes well under a
+# second, so this is generous; it is a backstop behind the lock, not the mechanism.
+STEP_RETRIES = 4
 
 
 class NttdGateway:
@@ -72,6 +77,22 @@ class NttdGateway:
             reply.raise_for_status()
             return reply.json()
 
+    def _step_lock(self) -> asyncio.Lock:
+        """One lock per session, shared by every tool in this conversation.
+
+        A session takes ONE step at a time: the gate refuses a second with 409 while one is
+        in flight, because two steps overlapping would advance the world twice for one
+        decision. neuro-san runs tool calls concurrently, so two aircraft bought in the same
+        turn, or a purchase overlapping a stretch of time passing, collide.
+
+        Kept in sly_data because that is what every coded tool in one invocation shares, so
+        they queue behind each other instead of racing.
+        """
+        lock = self._sly.get("step_lock")
+        if lock is None:
+            lock = self._sly["step_lock"] = asyncio.Lock()
+        return lock
+
     async def act(self, actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Submit a batch and advance one day. The only call that changes anything.
 
@@ -85,13 +106,23 @@ class NttdGateway:
         verify tools are for, and conflating the two is the single most expensive mistake
         available in this benchmark.
         """
-        await self._register()
-        async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
-            route = "actions/submit" if self._sly.get("realtime") else "step"
-            reply = await client.post(
-                f"{self._root}/{route}", json={"actions": actions}, headers=self._headers
-            )
-            reply.raise_for_status()
+        async with self._step_lock():
+            await self._register()
+            async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+                route = "actions/submit" if self._sly.get("realtime") else "step"
+                # The lock covers one event loop. Waiting briefly and trying again covers
+                # the rest: a step already in flight finishes in well under a second, and
+                # the alternative is losing a decision the network has already made.
+                for attempt in range(STEP_RETRIES):
+                    reply = await client.post(
+                        f"{self._root}/{route}",
+                        json={"actions": actions},
+                        headers=self._headers,
+                    )
+                    if reply.status_code != 409 or "flight" not in reply.text.lower():
+                        break
+                    await asyncio.sleep(0.4 * (attempt + 1))
+                reply.raise_for_status()
             # One entry per action, under action_results. The step also returns the fresh
             # observation, which is how a result is seen: nttd executes the batch, advances
             # a day, and answers with what the world looks like afterwards.
