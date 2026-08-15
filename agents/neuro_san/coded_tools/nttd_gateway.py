@@ -63,7 +63,12 @@ class NttdGateway:
             return reply.json()
 
     async def act(self, actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Submit a batch and advance one step. The only call that changes anything.
+        """Submit a batch and advance one day. The only call that changes anything.
+
+        Acting and time passing are the same call in stepped play: nttd executes the batch
+        and then advances the world by one step, which is one game day. So a turn that
+        builds something has already moved the clock by a day, and an EMPTY batch is how a
+        day is spent without doing anything, which is what waiting is made of.
 
         Returns one result per action, each carrying the game's own verdict. A `success`
         here means the command was accepted, NOT that a route works: that is what the

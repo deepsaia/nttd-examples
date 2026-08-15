@@ -112,3 +112,48 @@ def test_there_is_no_runner_reimplementing_the_client() -> None:
     the copy is the one nobody maintains.
     """
     assert not (_ROOT / "examples" / "neuro_san_runner.py").exists()
+
+
+class TestTheLoop:
+    """A benchmark run is a loop, and the loop's only decision is whether the run is over.
+
+    Two failures this is between. A single conversation asked to play a whole game year
+    grows its own context until the model loses the start of the run. A loop that decides
+    when the agent should act takes the judgement the benchmark is measuring and puts it in
+    a constant: an earlier version woke the agent every 30 game days, a number lifted from
+    hand play and imposed on every map.
+    """
+
+    def test_the_loop_ends_when_the_session_does(self) -> None:
+        import inspect
+
+        from examples import play_session
+
+        source = inspect.getsource(play_session.play)
+        assert "_status(session)" in source, "the game says when it is over, not this loop"
+        assert "ended" in source
+
+    def test_the_loop_does_not_schedule_the_agent(self) -> None:
+        """No cadence, no step budget: only a backstop against a network making no progress."""
+        import inspect
+
+        from examples import play_session
+
+        source = inspect.getsource(play_session)
+        body = source.split('"""', 2)[2]
+        assert "decide_every" not in body
+        assert "max_turns" in body, "a runaway guard is fine; a schedule is not"
+
+    def test_turns_carry_the_conversation_forward(self) -> None:
+        """Otherwise every turn is amnesiac and re-derives what it already decided."""
+        import inspect
+
+        from examples import play_session
+
+        assert "chat_context" in inspect.getsource(play_session.play)
+
+    def test_the_networks_know_that_acting_costs_a_day(self) -> None:
+        """Stepped play executes a batch and then advances one step, so building costs time."""
+        for name in NETWORKS:
+            body = (_REGISTRIES / f"{name}.hocon").read_text()
+            assert "advances the world by one day" in body, name
