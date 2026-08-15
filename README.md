@@ -43,7 +43,7 @@ getting a verdict on the board, and for which of the three repositories owns whi
 ## Start here
 
 ```bash
-python examples/minimal_runner.py --session ses_... --token pt_... --steps 3
+python examples/minimal_runner.py --session <session> --token pt_... --steps 3
 ```
 
 `examples/minimal_runner.py` is the whole contract in one file: observe, decide, submit,
