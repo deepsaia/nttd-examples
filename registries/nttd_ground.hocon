@@ -86,26 +86,28 @@ station that is merely busy.
         instructions = """
 You decide where this company grows next, and you commit the money.
 
-Road first, when the mode allows it. Towns arrive with roads, so most of a corridor already
-exists: one measured route needed 6 tiles built out of 25, which makes buses the fastest
-way to a positive balance. One town pair saturates at three or four buses, so growth is
-more pairs, not more buses on the same pair.
+The order matters and skipping a step wastes the money spent on the ones before it:
 
-Whatever you build, in this order:
-1. Call rank_sites for the mode to get candidate towns.
-2. Build the stops or platforms and connect them.
-3. Call verify_reachable from where the vehicle will START to where it must GO, and read
-   tiles_reachable. One tile means the stop is connected to nothing and the vehicle will
-   sit in its depot: this is the failure that looks exactly like success.
-4. Only then call buy_and_dispatch.
+1. **Money first.** A company opens with 100,000, and two airports plus the aircraft to fly
+   between them cost several times that. Call borrow before building, for roughly what you
+   are about to spend. Borrowing more than 250,000 forfeits part of the score, so borrow
+   against something you are about to build rather than to hold cash.
+2. **Sites.** Call rank_sites with the mode you are playing. Every site it returns is inside its own
+   airport's coverage; sites that are not never appear. Prefer the largest populations and
+   the longest legs between them: a big plane on a 205 tile leg has earned six times what
+   small planes on 35 tile hops earned.
+3. **Build.** Call build_route with the two sites. NOTHING can be bought before this: an
+   aircraft with nowhere to land is money spent on an ornament.
+4. **Then buy.** Call buy_and_dispatch once per aircraft, ordering it between the two
+   stations build_route reported.
 
-For rail specifically: put the depot against the MIDDLE of the corridor, not beside a
-platform. A depot beside a platform joins that station's own stub of track, reaching a
-handful of tiles of a line that is otherwise fine, and the train never leaves. A corridor
-that crosses water fails as a tunnel error and needs a bridge whose two heads sit at the
-same height.
+build_route joins the two ends and then proves a vehicle can travel between them. If it
+answers ready false, read why and fix THAT: a corridor that did not join names the tile it
+failed on, and a stop reachable in one tile is connected to nothing. Do not buy a vehicle
+for a route that is not ready, and do not build the same route again hoping for a different
+answer.
 """ ${aaosa_instructions}
-        tools = ["rank_sites", "buy_and_dispatch", "verify_reachable"]
+        tools = ["rank_sites", "borrow", "build_route", "buy_and_dispatch", "verify_reachable"]
     }
 
     {
@@ -124,6 +126,42 @@ same height.
             }
         }
         class = "let_time_pass.LetTimePass"
+    }
+    {
+        name = "build_route"
+        function = {
+            description = "Builds the infrastructure a route needs and verifies it will carry."
+            parameters = {
+                type = "object"
+                properties = {
+                    mode = { type = "string", description = "air, water, road or rail" }
+                    from_site = {
+                        type = "object"
+                        description = "One end, as rank_sites returned it"
+                    }
+                    to_site = {
+                        type = "object"
+                        description = "The other end, as rank_sites returned it"
+                    }
+                }
+                required = ["mode", "from_site", "to_site"]
+            }
+        }
+        class = "build_route.BuildRoute"
+    }
+    {
+        name = "borrow"
+        function = {
+            description = "Sets the company loan, so there is money to build with."
+            parameters = {
+                type = "object"
+                properties = {
+                    amount = { type = "integer", description = "The loan to hold, in pounds" }
+                }
+                required = ["amount"]
+            }
+        }
+        class = "borrow.Borrow"
     }
     {
         name = "read_position"

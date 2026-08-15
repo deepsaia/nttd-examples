@@ -22,7 +22,9 @@ the benchmark is measuring.
 | `read_position` | a fleet of nine and a flat profit line, which is what a lost train, a plane parked in its hangar and a ship circling its own pool all look like from outside |
 | `verify_reachable` | a build that returned `success` while the vehicle could not leave: 60 game days of a bus sitting at a depot, four trains parked for a year |
 | `rank_sites` | an airport 16 tiles from the town it was meant to serve, earning nothing until it was moved |
-| `buy_and_dispatch` | a large plane at a small airport, a maglev on plain rail, a full-load order parking a train at a slow producer, and a vehicle bought too late to pay for itself |
+| `build_route` | the ends, the joining and the proof in one call, because the ORDER is where runs are lost. Its absence was worse: with nothing that could build, buying was the only action the network had, so it bought aircraft with nowhere to land |
+| `borrow` | a company opens with 100,000 and two airports plus aircraft cost several times that, so a network that cannot borrow can barely build once |
+| `buy_and_dispatch` | a large plane at a small airport, a maglev on plain rail, a full-load order parking a train at a slow producer, a vehicle bought too late to pay for itself, and buying at all before there is anywhere to go |
 
 `nttd_gateway` is the only thing that talks to nttd: it builds the action envelope, keeps
 the session id and token in `sly_data` and out of the chat stream, and surfaces refusals

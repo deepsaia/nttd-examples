@@ -289,3 +289,55 @@ class TestConcurrentSteps:
         sly = {"session_id": "20260815-183253ist-royal-coral", "token": "pt_x"}
         first, second = NttdGateway(sly), NttdGateway(sly)
         assert first._step_lock() is second._step_lock()
+
+
+class TestTheNetworkCanActuallyBuild:
+    """A network can only do what its tools let it do.
+
+    With only rank_sites and buy_and_dispatch, buying was the sole action available, so it
+    bought aircraft with nowhere to land and looked like it was refusing to think. Nothing
+    in the prompt could have fixed that: the tool did not exist.
+
+    The other half was money. A company opens with 100,000 and two airports plus aircraft
+    cost several times that, so a network that cannot borrow can barely build once.
+    """
+
+    def test_every_network_can_build_and_borrow(self) -> None:
+        for name in NETWORKS:
+            tools = {tool["name"] for tool in _network(name)["tools"]}
+            assert "build_route" in tools, f"{name} cannot build anything"
+            assert "borrow" in tools, f"{name} cannot raise money to build with"
+
+    def test_expansion_is_told_the_order(self) -> None:
+        """Money, then sites, then build, then buy. Skipping one wastes the ones before it."""
+        for name in NETWORKS:
+            expansion = [t for t in _network(name)["tools"] if t["name"] == "Expansion"][0]
+            said = expansion["instructions"]
+            assert said.index("borrow") < said.index("build_route") < said.index("buy_and_dispatch")
+
+    def test_buying_without_a_route_is_refused(self) -> None:
+        import inspect
+
+        from agents.neuro_san.coded_tools.buy_and_dispatch import BuyAndDispatch
+
+        source = inspect.getsource(BuyAndDispatch.async_invoke)
+        assert 'get_stations' in source
+        assert "Build a route first" in source
+
+    def test_air_needs_nothing_between_its_endpoints(self) -> None:
+        """Two airports IS the route, which is why the mode outperforms the others."""
+        import inspect
+
+        from agents.neuro_san.coded_tools import build_route
+
+        air = inspect.getsource(build_route._air)
+        assert "connect" not in air.split('"""', 2)[2], "aircraft do not need a corridor"
+
+    def test_a_surface_route_is_proved_before_a_vehicle_is_bought(self) -> None:
+        import inspect
+
+        from agents.neuro_san.coded_tools import build_route
+
+        surface = inspect.getsource(build_route._surface)
+        assert "trace_route" in surface
+        assert "tiles_reachable" in surface

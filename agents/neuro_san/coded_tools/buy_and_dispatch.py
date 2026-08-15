@@ -64,6 +64,19 @@ class BuyAndDispatch(CodedTool):
                 ),
             }
 
+        # Nothing to serve means nothing to buy. The network once had no way to build at
+        # all, so buying was the only action available to it and it bought aircraft with
+        # nowhere to land; this refuses that rather than spending the money.
+        stations = await gateway.query("get_stations") or []
+        if len(stations) < 2:
+            return {
+                "bought": False,
+                "why": (
+                    f"{len(stations)} station(s) exist. Build a route first: a vehicle with "
+                    "nowhere to go earns nothing and still costs running money."
+                ),
+            }
+
         engine = int(args["engine_id"])
         depot = (int(args["depot_x"]), int(args["depot_y"]))
         stations = [int(s) for s in args["station_ids"]]
