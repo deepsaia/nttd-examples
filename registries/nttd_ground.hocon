@@ -1,5 +1,7 @@
 include "registries/nttd_aaosa.hocon"
 
+llm_config = ${nttd_llm_config}
+
 metadata {
     description = "Plays one nttd session on the ground or the water: road, rail or ship. These modes depend on a junction between a depot and a line, which is the thing hardest to confirm before spending on it."
     tags = ["nttd", "road", "rail", "water"]

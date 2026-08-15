@@ -4,6 +4,14 @@
 # it is the right one to answer, then asks its down-chain agents what they need, then
 # delegates, then compiles. Kept in one file so five networks cannot drift apart.
 
+# Anthropic, because the judgement here is about trade-offs rather than recall: which of
+# three viable corridors pays, whether to expand or consolidate, which problem matters now.
+# Needs ANTHROPIC_API_KEY in the environment of the neuro-san SERVER, not this repository.
+# Swap the model name for "claude-opus" on a hard map, or "claude-haiku" to run cheaply.
+nttd_llm_config = {
+    "model_name": "claude-sonnet"
+}
+
 aaosa_call = {
     description = "Depending on the mode of the inquiry, use this tool to either determine the requirements to fulfill it, or fulfill it."
     parameters = {

@@ -1,5 +1,7 @@
 include "registries/nttd_aaosa.hocon"
 
+llm_config = ${nttd_llm_config}
+
 metadata {
     description = "Plays one nttd session across every mode, allocating capital to whichever reaches revenue soonest."
     tags = ["nttd", "combined"]
