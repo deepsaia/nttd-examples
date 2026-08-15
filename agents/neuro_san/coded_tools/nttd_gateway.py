@@ -28,6 +28,7 @@ class NttdGateway:
     """A participant's view of one session."""
 
     def __init__(self, sly_data: dict[str, Any]) -> None:
+        self._sly = sly_data
         self._session = str(sly_data.get("session_id") or "")
         self._token = str(sly_data.get("token") or "")
         if not self._session or not self._token:
@@ -84,15 +85,43 @@ class NttdGateway:
         verify tools are for, and conflating the two is the single most expensive mistake
         available in this benchmark.
         """
+        await self._register()
         async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+            route = "actions/submit" if self._sly.get("realtime") else "step"
             reply = await client.post(
-                f"{self._root}/step", json={"actions": actions}, headers=self._headers
+                f"{self._root}/{route}", json={"actions": actions}, headers=self._headers
             )
             reply.raise_for_status()
             # One entry per action, under action_results. The step also returns the fresh
             # observation, which is how a result is seen: nttd executes the batch, advances
             # a day, and answers with what the world looks like afterwards.
             return reply.json().get("action_results") or []
+
+    async def _register(self) -> None:
+        """Declare this company a stepper, once, before the first step.
+
+        A stepped session refuses /step with 409 until the company has registered, because
+        the gate has to know who it is waiting for before it will hold the world still. The
+        opening observation comes back from the same call.
+
+        Idempotent on the server, but tracked here anyway: it is remembered in sly_data, so
+        one registration covers a whole run rather than a call per turn.
+
+        A realtime scenario does not step at all and says so rather than registering. Its
+        actions go to actions/submit and the clock runs regardless, which is noted in
+        sly_data so the next call takes the right route the first time.
+        """
+        if self._sly.get("registered") or self._sly.get("realtime"):
+            return
+        async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+            reply = await client.post(
+                f"{self._root}/step/reset", json={}, headers=self._headers
+            )
+            if reply.status_code == 409 and "stepped" in reply.text.lower():
+                self._sly["realtime"] = True
+                return
+            reply.raise_for_status()
+        self._sly["registered"] = True
 
     @staticmethod
     def envelope(action: str, **params: Any) -> dict[str, Any]:

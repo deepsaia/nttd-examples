@@ -48,10 +48,18 @@ class ReadPosition(CodedTool):
         stations = world.get("stations") or []
         game = world.get("game") or {}
 
-        started = int(sly_data.get("start_game_date") or 0)
-        budget = int(sly_data.get("game_days") or 0)
-        today = int(game.get("game_date") or 0)
-        days_left = max(0, started + budget - today) if started and budget else None
+        # From the game, which is the only thing that knows. This used to read a budget out
+        # of sly_data that nothing ever put there, so days_left was always None and the
+        # payback guard it exists for could never fire.
+        # Zero total means the run is not bounded by days at all, which is a different
+        # thing from having none left. Testing the remaining count for truthiness conflated
+        # them, so the last day of a run reported "no horizon" and the payback guard that
+        # exists for exactly that moment stood down.
+        days_left = (
+            int(game.get("game_days_remaining") or 0)
+            if int(game.get("game_days_total") or 0)
+            else None
+        )
 
         loan = int(company.get("loan") or 0)
         report = {

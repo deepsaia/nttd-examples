@@ -54,6 +54,14 @@ class RankSites(CodedTool):
         mode = str(args.get("mode") or "air")
         limit = int(args.get("limit") or 6)
 
+        # Surveyed once per session, then remembered. The map does not move: a town that
+        # an airport covers still covers it next turn, and a dock spot stays where it is.
+        # Without this the whole survey ran again on every turn, which for air meant one
+        # query per airport type per town, every time the network asked where to build.
+        remembered = (sly_data.setdefault("sites", {})).get(mode)
+        if remembered:
+            return remembered[:limit]
+
         towns = sorted(
             await gateway.query("get_towns") or [],
             key=lambda t: -(t.get("population") or 0),
@@ -61,14 +69,22 @@ class RankSites(CodedTool):
         towns = [t for t in towns if (t.get("population") or 0) >= TOO_SMALL_TO_SERVE]
 
         if mode == "air":
-            return await _air_sites(gateway, towns, limit)
-        if mode == "water":
-            return await _water_sites(gateway, towns, limit)
-        return [
-            {"town_id": t["id"], "name": t["name"], "population": t["population"],
-             "x": t["x"], "y": t["y"]}
-            for t in towns[:limit]
-        ]
+            found = await _air_sites(gateway, towns, limit)
+        elif mode == "water":
+            found = await _water_sites(gateway, towns, limit)
+        else:
+            found = _town_sites(towns, limit)
+        sly_data["sites"][mode] = found
+        return found
+
+
+def _town_sites(towns: list[dict], limit: int) -> list[dict]:
+    """Road and rail start from the towns themselves; the corridor is chosen later."""
+    return [
+        {"town_id": t["id"], "name": t["name"], "population": t["population"],
+         "x": t["x"], "y": t["y"]}
+        for t in towns[:limit]
+    ]
 
 
 async def _air_sites(gateway: NttdGateway, towns: list[dict], limit: int) -> list[dict]:
@@ -96,20 +112,25 @@ async def _air_sites(gateway: NttdGateway, towns: list[dict], limit: int) -> lis
 
 
 async def _covered_spot(gateway: NttdGateway, town: dict, kind: dict) -> dict | None:
-    """A spot for this airport type that the town actually falls inside."""
-    for radius in (3, 5, 8):
-        spots = await gateway.query(
-            "find_airport_spots",
-            {"town_id": town["id"], "airport_type": kind["id"],
-             "radius": radius, "max_results": 1},
-        ) or []
-        if spots and spots[0].get("within_coverage"):
+    """A spot for this airport type that the town actually falls inside.
+
+    ONE query per type, asking widely and choosing from what comes back. This used to walk
+    radii of 3, 5 and 8 taking the single nearest each time, which is three calls to answer
+    a question one call answers better: a radius of 8 already contains the smaller ones, and
+    asking for several candidates finds a covered site that taking only the nearest misses.
+    """
+    spots = await gateway.query(
+        "find_airport_spots",
+        {"town_id": town["id"], "airport_type": kind["id"], "radius": 8, "max_results": 6},
+    ) or []
+    for spot in spots:
+        if spot.get("within_coverage"):
             return {
                 "town": town["name"],
                 "population": town["population"],
                 "airport_type": kind["id"],
-                "x": spots[0]["x"],
-                "y": spots[0]["y"],
+                "x": spot["x"],
+                "y": spot["y"],
                 "takes_big_planes": kind["id"] != 5,
             }
     return None
