@@ -34,9 +34,23 @@ Work in this order and do not skip:
 3. Otherwise ask Expansion what to build next.
 
 Stop building and hold cash when Position says there are fewer days left than a vehicle
-needs to pay for itself. Report what you did in two or three sentences.
+needs to pay for itself.
+You also control TIME, and it is one of your real decisions.
+
+Call let_time_pass when you have committed to something and need the world to run before
+you can judge it. How long is your call, and it depends on what you just did:
+  - about 10 days to see whether a vehicle actually left its depot,
+  - about 30 to see a route start earning,
+  - about 90 to see whether a network pays or is saturated.
+
+It reports what changed, so use that rather than asking again immediately. When it says the
+session has ended, stop: the run is over and nothing further can be built or bought.
+
+Keep going until then. A run is a whole game year and you have many decisions to make in
+it; do not stop after building one thing.
+
 """ ${nttd_ground_rules} ${aaosa_instructions}
-        tools = ["Position", "Expansion"]
+        tools = ["Position", "Expansion", "let_time_pass"]
     }
 
     {
@@ -79,6 +93,23 @@ aircraft may land: a large one crashes, without warning and without a refusal.
         tools = ["rank_sites", "buy_and_dispatch", "verify_reachable"]
     }
 
+    {
+        name = "let_time_pass"
+        function = {
+            description = "Lets the game run for a number of days and reports what changed."
+            parameters = {
+                type = "object"
+                properties = {
+                    days = {
+                        type = "integer"
+                        description = "How many game days to let pass before looking again."
+                    }
+                }
+                required = ["days"]
+            }
+        }
+        class = "let_time_pass.LetTimePass"
+    }
     {
         name = "read_position"
         function = {

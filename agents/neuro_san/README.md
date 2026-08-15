@@ -46,17 +46,27 @@ uv sync --extra neuro-san
 cp .env.example .env                 # fill in ANTHROPIC_API_KEY
 
 uv run ns run --server-only          # terminal A: serves the networks on :8080
-uv run python -m examples.neuro_san_runner \
-    --session <session> --token <token> --network nttd_air   # terminal B
+
+uv run python -m neuro_san.client.agent_cli \
+    --connection http --agent nttd_air --one_shot \
+    --sly_data '{"session_id": "<session>", "token": "<token>"}'   # terminal B
 ```
 
-The runner decides, then lets game days pass, then decides again, until the session reaches
-its tier's budget and closes itself. `--decide-every` sets that cadence and defaults to 30
-days: a step advances one day, so asking the network to decide something daily would spend
-366 model calls on one year and mostly be told nothing has changed. `--max-decisions 1`
-stops after a single turn, which is how to check the loop works before committing to a run.
+There is no bespoke runner. neuro-san's own client carries the session id and token as
+`sly_data`, which keeps them out of the chat stream, and the network plays the whole run in
+one conversation: it decides, calls `let_time_pass` to let the world run, looks at what
+changed, and decides again, until the session reaches its day budget and closes itself.
 
-`ns` is neuro-san-studio's launcher. It loads the project-root `.env` before starting, so
-the manifest path, the tool path and the model key are configured in one file rather than
-exported per terminal. Without `--server-only` it also serves the nsflow UI at
-http://localhost:4173, which draws the network and shows each agent's reasoning as it runs.
+**The cadence is the network's decision, not a setting.** An earlier version had a runner
+that woke the agent every 30 game days, which was a number lifted from how the game was
+played by hand. Judging when to act and how long to wait is part of what the benchmark
+measures, so it belongs to the agent: 10 days to see whether a vehicle left its depot, 90
+to see whether a route pays.
+
+Drop `--server-only` from `ns run` to get the nsflow UI at http://localhost:4173, which
+draws the network and shows each agent's reasoning as it runs. That is the thing to watch
+while a run is going, alongside `nttd monitor`.
+
+`ns` is neuro-san-studio's launcher: it loads the project-root `.env` before starting, so
+the manifest path, the tool path and the model key live in one file rather than being
+exported per terminal.

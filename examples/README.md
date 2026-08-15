@@ -5,7 +5,7 @@ Two worked entries, plus a neuro-san multi-agent system.
 | | |
 |---|---|
 | `minimal_runner.py` | a whole stepped run with no model and no framework. Start here |
-| `neuro_san_runner.py` | a neuro-san agent network: reads the position, fixes what is broken, then builds |
+| the neuro-san networks | driven by `neuro_san.client.agent_cli`, not a runner in this repository. See `agents/neuro_san/README.md` |
 | `neuro_san_mas/` | a neuro-san agent network over the same session |
 
 One per idea rather than one per SDK. There were LangChain, OpenAI and scripted runners

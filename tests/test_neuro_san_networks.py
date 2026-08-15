@@ -86,3 +86,29 @@ def test_the_expensive_lessons_live_in_python() -> None:
     assert "within_coverage" in (tools / "rank_sites.py").read_text()
     assert "DAYS_TO_PAY_BACK" in (tools / "buy_and_dispatch.py").read_text()
     assert "loan_costs_score" in (tools / "read_position.py").read_text()
+
+
+@pytest.mark.parametrize("name", NETWORKS)
+def test_the_network_controls_its_own_clock(name: str) -> None:
+    """When to act and how long to wait is judgement, so it belongs to the agent.
+
+    An earlier version woke the agent every 30 game days from a runner, which is a number
+    lifted from how the game was played by hand and imposed on every map. Deciding that a
+    route needs 90 days to prove itself, or that a vehicle needs 10 to leave its depot, is
+    part of what the benchmark measures.
+    """
+    network = _network(name)
+    front = network["tools"][0]
+    assert "let_time_pass" in front["tools"], f"{name}: the front man cannot advance time"
+
+    defined = {tool["name"]: tool for tool in network["tools"]}
+    assert defined["let_time_pass"].get("class", None) == "let_time_pass.LetTimePass"
+
+
+def test_there_is_no_runner_reimplementing_the_client() -> None:
+    """neuro-san's own client carries sly_data and streams a whole conversation.
+
+    A file here that opened its own session and looped would be a second copy of that, and
+    the copy is the one nobody maintains.
+    """
+    assert not (_ROOT / "examples" / "neuro_san_runner.py").exists()
