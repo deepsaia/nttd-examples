@@ -50,6 +50,12 @@ uv run python -m examples.neuro_san_runner \
     --session <session> --token <token> --network nttd_air   # terminal B
 ```
 
+The runner decides, then lets game days pass, then decides again, until the session reaches
+its tier's budget and closes itself. `--decide-every` sets that cadence and defaults to 30
+days: a step advances one day, so asking the network to decide something daily would spend
+366 model calls on one year and mostly be told nothing has changed. `--max-decisions 1`
+stops after a single turn, which is how to check the loop works before committing to a run.
+
 `ns` is neuro-san-studio's launcher. It loads the project-root `.env` before starting, so
 the manifest path, the tool path and the model key are configured in one file rather than
 exported per terminal. Without `--server-only` it also serves the nsflow UI at
