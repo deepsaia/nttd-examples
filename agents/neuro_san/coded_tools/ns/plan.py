@@ -20,7 +20,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from agents.neuro_san.coded_tools.ns import constants as key
+try:
+    # As part of this repository, which is how the tests import it.
+    from agents.neuro_san.coded_tools.ns import constants as key
+except ImportError:
+    # As flat siblings, which is how neuro-san loads coded tools when
+    # AGENT_TOOL_PATH_ONLY is true. Both spellings are needed and the foundation was
+    # the one place that had only one.
+    import constants as key
 
 # Actions that must be alone in a step. connect_road and connect_rail lay a whole corridor and
 # can partially fail on a single tile, and the refusal names that tile; batching them with

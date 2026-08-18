@@ -38,7 +38,12 @@ DECISIONS: Final = "decisions"
 # How many turns have been taken, which is not the same as how many game days have passed.
 TURNS: Final = "turns"
 
-ALLOWED: Final = (PLAN, ROUTES, REFUSALS, SITES, DECISIONS, TURNS)
+# Vehicle ids seen the last time the fleet was read. A crash removes a vehicle from the
+# observation and reports nothing, so the only way to notice one is to have kept the
+# previous list. That makes this cross-turn state: within one turn nothing has crashed yet.
+FLEET_SEEN: Final = "fleet_seen"
+
+ALLOWED: Final = (PLAN, ROUTES, REFUSALS, SITES, DECISIONS, TURNS, FLEET_SEEN)
 
 # --- credentials, downstream only --------------------------------------------------------
 
@@ -55,4 +60,9 @@ SNAPSHOT: Final = "snapshot"
 # True once the session has closed itself, so nothing tries to act on a finished run.
 ENDED: Final = "ended"
 
-TURN_LOCAL: Final = (SNAPSHOT, ENDED)
+# Whether this company has registered as a stepper. Turn local rather than carried: the gate
+# is per session on the server, and re-registering is idempotent, so carrying it buys nothing
+# and a stale true would skip a registration a fresh process still needs.
+REGISTERED: Final = "registered"
+
+TURN_LOCAL: Final = (SNAPSHOT, ENDED, REGISTERED)

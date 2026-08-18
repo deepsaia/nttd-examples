@@ -1,0 +1,71 @@
+# Shared by all four nttd networks: air, water, road and rail.
+#
+# What lives here is the plumbing and the rules that hold whatever is being moved. What does
+# NOT live here is strategy: the four modes are different games, and a shared strategist would
+# be four strategies averaged into none.
+
+# Anthropic, because the judgement here is about trade-offs rather than recall: which of three
+# viable corridors pays, whether to expand or consolidate, which problem matters now. The
+# strategist overrides this to a stronger model; the workers do not need one.
+ns_llm_config = {
+    "model_name": "claude-sonnet"
+}
+
+# ---------------------------------------------------------------------------------------------
+# The allow-list, and why nothing worked without it.
+#
+# neuro-san's SlyDataRedactor is security-by-default. Its own docstring: "our stance is security
+# by default, so when nothing is listed, it is equivalent to ... false". With nothing declared,
+# NOTHING in sly_data returns to the client, so every scrap of cross-turn state died at the turn
+# boundary: the route just built, the ledger of refusals, the cached survey. That is why an
+# earlier network could not correct itself and submitted one refused purchase 35 times.
+#
+# StreamingInputProcessor.process_once merges returned_sly_data back into the state it passes
+# forward, so with these keys listed the memory round-trips turn to turn and one store is enough.
+#
+# Listed EXPLICITLY rather than true. Two things must never cross: the credentials, which would
+# put a participant token in a chat payload, and anything holding a live object such as the step
+# lock, which cannot be serialised at all.
+ns_allow = {
+    to_upstream = {
+        sly_data = [
+            "plan"        # actions staged and not yet committed
+            "routes"      # corridors that exist, with their stations and depot
+            "refusals"    # what the game refused, so it is not asked twice
+            "sites"       # the surveyed map, computed once because towns do not move
+            "decisions"   # what the strategist chose and why, for a later turn to review
+            "turns"       # how many turns have been taken
+            "fleet_seen"  # last known vehicle ids, which is how a crash is noticed
+            "air_health"  # how long each aircraft has been in its current state
+            "air_retiring" # vehicles sent to a depot and awaiting sale
+        ]
+    }
+}
+
+# ---------------------------------------------------------------------------------------------
+# The rules that hold in every mode. Kept here because five copies of one rule become five
+# different rules, and each of these cost a run to learn.
+ns_ground_rules = """
+Four things are true whatever is being moved:
+
+1. A build action returning success is NOT a working route. Nothing buys a vehicle until a tool
+   has confirmed a vehicle can actually get from one end to the other.
+2. A station outside its own catchment earns nothing, however well sited it looks.
+3. The score is mostly cargo delivered: 400 of the 1000 points, four times any other component.
+   A decision that moves more freight beats one that looks tidier.
+4. Planning is free. Only committing a plan and letting time pass cost game days, and a batch has
+   no ceiling, so build a whole corridor in one commit rather than one action at a time.
+
+Never invent an identifier. Engine ids, coordinates, tiles and station ids all come from tools.
+If a tool refuses, read the reason: it is written for you, and repeating the call gets the same
+answer.
+"""
+
+# How a worker agent should answer. They are called by the strategist, not by a person.
+ns_worker_conduct = """
+You are called by the company's strategist, not by a person. Answer with what you did and what
+it means for the decision at hand, in a few lines. Do not restate the whole world back.
+
+If a tool returns an Error, say what it said and what you would need in order to proceed. Do not
+retry the same call unchanged.
+"""

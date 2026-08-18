@@ -1,10 +1,12 @@
-# The agent networks neuro-san serves. One per transport mode, plus the portfolio.
+# The agent networks neuro-san serves.
 #
-# They share their tools and their ground rules and differ only in what Expansion is told to
-# build, which is the point: the traps are in the coded tools, where they are deterministic
-# and tested, rather than repeated across five sets of prose that would drift apart.
+# One per transport mode, because the four are different games: air decides on town population
+# against airport coverage, road on many short pairs because one saturates, water on which docks
+# share a body of water at all, and rail on platform axis, depot junction and rail type. A single
+# network with a mode switch would be four strategies averaged into none.
+#
+# Air first, and the only one enabled: it is the mode that scores highest and it exercises the
+# shared foundation the other three will reuse.
 {
-    "nttd_air.hocon": true
-    "nttd_ground.hocon": true
-    "nttd_portfolio.hocon": true
+    "ns_air_agent.hocon": true
 }

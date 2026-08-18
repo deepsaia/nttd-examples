@@ -28,7 +28,14 @@ from typing import Any
 
 import httpx
 
-from agents.neuro_san.coded_tools.ns import constants as key
+try:
+    # As part of this repository, which is how the tests import it.
+    from agents.neuro_san.coded_tools.ns import constants as key
+except ImportError:
+    # As flat siblings, which is how neuro-san loads coded tools when
+    # AGENT_TOOL_PATH_ONLY is true. Both spellings are needed and the foundation was
+    # the one place that had only one.
+    import constants as key
 
 BASE_URL = os.environ.get("NTTD_API_URL", "http://127.0.0.1:8000")
 TIMEOUT_SECONDS = float(os.environ.get("NTTD_TIMEOUT_SECONDS", "900"))
@@ -43,6 +50,15 @@ _LOCKS: dict[str, asyncio.Lock] = {}
 # How many refusals to carry. Enough to see a pattern, few enough that the one that matters
 # now is not buried under an old one.
 REFUSALS_KEPT = 12
+
+
+class QueryRefused(RuntimeError):
+    """The GameScript answered a query with success false and a reason.
+
+    Its own class because it is not a transport failure and must not be caught alongside one:
+    an unreachable server is a different problem from a query the engine declined, and the
+    engine's reason is the useful part.
+    """
 
 
 class NttdGateway:
@@ -87,7 +103,14 @@ class NttdGateway:
                 headers=self._headers,
             )
             reply.raise_for_status()
-            return reply.json().get("result")
+            answer = reply.json()
+
+        # A GameScript query can answer {success: false, error: "..."} with HTTP 200, and
+        # reading only "result" turns that into None. A caller then sees an empty list and
+        # reports "no sites found" when the truth was a refused query with a reason attached.
+        if isinstance(answer, dict) and answer.get("success") is False:
+            raise QueryRefused(str(answer.get("error") or f"{action} was refused"))
+        return answer.get("result") if isinstance(answer, dict) else answer
 
     async def observe(self) -> dict[str, Any]:
         """The whole game state, which is what nttd returns rather than a projection."""
@@ -169,9 +192,9 @@ class NttdGateway:
         Realtime is not handled by pretending: a scenario that does not step says so, and these
         networks are built for stepped play where deliberation is free.
         """
-        if self._sly.get("registered"):
+        if self._sly.get(key.REGISTERED):
             return
         async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
             reply = await client.post(f"{self._root}/step/reset", json={}, headers=self._headers)
             reply.raise_for_status()
-        self._sly["registered"] = True
+        self._sly[key.REGISTERED] = True
