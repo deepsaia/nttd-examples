@@ -126,7 +126,33 @@ class NttdGateway:
             # One entry per action, under action_results. The step also returns the fresh
             # observation, which is how a result is seen: nttd executes the batch, advances
             # a day, and answers with what the world looks like afterwards.
-            return reply.json().get("action_results") or []
+            results = reply.json().get("action_results") or []
+            self._remember_failures(actions, results)
+            return results
+
+    def _remember_failures(
+        self, actions: list[dict[str, Any]], results: list[dict[str, Any]]
+    ) -> None:
+        """Keep what was refused, so the same mistake is not made thirty-five times.
+
+        Measured: one run submitted buy_vehicle 35 times with invented engine ids, every one
+        refused with the same error, because nothing carried the refusal from one turn into
+        the next. A model that cannot see its own failures repeats them.
+
+        Kept in sly_data and reported by read_position, which is the first thing every turn
+        reads, so a failure is in front of the network before it decides anything.
+        """
+        failures = self._sly.setdefault("failures", [])
+        for action, result in zip(actions, results, strict=False):
+            if (result or {}).get("status") == "success":
+                continue
+            failures.append({
+                "action": action.get("action"),
+                "params": action.get("params"),
+                "error": (result or {}).get("error") or "refused",
+            })
+        # Only the recent ones. A long tail of old refusals buries the one that matters now.
+        del failures[:-12]
 
     async def _register(self) -> None:
         """Declare this company a stepper, once, before the first step.

@@ -72,9 +72,27 @@ class ReadPosition(CodedTool):
             "stations": len(stations),
             "vehicles": len(vehicles),
             "problems": _problems(vehicles, stations),
+            # What was refused recently, so the same mistake is not repeated. One measured
+            # run submitted the same purchase 35 times with the same error because nothing
+            # carried the refusal from one turn to the next.
+            "recent_failures": _recent(sly_data),
+            "routes_running": [r.get("towns") for r in (sly_data.get("routes") or [])],
         }
         sly_data["position"] = report
         return report
+
+
+def _recent(sly_data: dict[str, Any]) -> list[str]:
+    """Refusals worth reading, deduplicated.
+
+    Thirty-five copies of one error say the same thing once, and burying the useful line
+    under repetitions is how a network fails to notice it at all.
+    """
+    seen: dict[str, int] = {}
+    for failure in sly_data.get("failures") or []:
+        line = f"{failure.get('action')}: {failure.get('error')}"
+        seen[line] = seen.get(line, 0) + 1
+    return [f"{line} (x{count})" if count > 1 else line for line, count in seen.items()]
 
 
 def _problems(vehicles: list[dict], stations: list[dict]) -> list[str]:

@@ -1,25 +1,28 @@
-"""Buy a vehicle, give it orders, and leave it running.
+"""Buy vehicles for a route that exists, and leave them running.
 
-Four separate failures live in this one recipe, which is why it is one tool and not four
-actions a model strings together.
+**Nothing here is named by the model.** It asks for a number of vehicles on a route; the
+engine, the depot and the orders are all resolved from the game. That is not tidiness, it is
+the whole point: an earlier version took `engine_id` and `depot_x/y` as arguments and a run
+submitted buy_vehicle THIRTY-FIVE times with invented ids, 30, 40, 21, 60, 90, at a hangar
+coordinate that was also a guess. Every one was refused with ERR_PRECONDITION_FAILED. A model
+asked for an identifier it has no way to obtain will invent one, so it is never asked.
 
-**Start it once.** `start_vehicle` used to toggle, so a dispatch that started a vehicle
-followed by an explicit start left it parked, reporting success both times. That cost two
-whole runs. The action is idempotent now, and this tool still starts exactly once and then
-checks, because the check is what catches the next version of this bug.
+Five failures live in this one recipe, which is why it is one tool and not four actions:
 
-**Match the vehicle to what it will use.** A large aircraft crashes at a small airport. A
-maglev cannot run on the plain rail `connect_rail` builds by default, and in this era the
-engine list is dominated by maglev and monorail, so picking the fastest engine gets a train
-that cannot move on the track just laid.
+**The engine has to be buyable and it has to fit.** A large aircraft crashes at a small
+airport. A maglev cannot run on the plain rail `connect_rail` lays by default, and in this
+era the engine list is dominated by maglev and monorail, so picking the fastest gets a train
+that cannot move on the track just built.
 
-**Full load parks a vehicle on a slow source.** `OF_FULL_LOAD` on a mixed consist held a
-train at the producer for months. Take what is there unless the source genuinely fills the
-vehicle inside a round trip.
+**Start it once.** `start_vehicle` used to toggle, so a dispatch followed by an explicit
+start left the vehicle parked while reporting success both times.
 
-**Buying near the end is buying nothing.** An aircraft takes roughly 190 days to return its
-price. Bought with 60 days left it converts cash into a depreciating asset, and the cash
-would have scored more sitting still.
+**Full load parks a vehicle on a slow source**, so orders take what is there.
+
+**Buying near the end is buying nothing.** A vehicle needs roughly 120 days to return its
+price; bought later it is cash turned into a depreciating asset.
+
+**Buying before there is anywhere to go** is the failure this tool was added to prevent.
 """
 
 from __future__ import annotations
@@ -29,101 +32,161 @@ from typing import Any
 from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
-    # Loaded as part of this repository, which is how the tests import it.
     from agents.neuro_san.coded_tools.nttd_gateway import NttdGateway
 except ImportError:
-    # Loaded by neuro-san from AGENT_TOOL_PATH, where these modules are siblings and the
-    # package above them is not on the path. Both spellings are needed because
-    # AGENT_TOOL_PATH_ONLY=true deliberately stops a tool resolving from anywhere on
-    # PYTHONPATH, which is what keeps a `class` reference in a HOCON from reaching
-    # arbitrary code.
     from nttd_gateway import NttdGateway
 
-# Roughly what a vehicle needs to return its price at the rates measured in play. Below
-# this many days remaining, buying one is converting cash into a depreciating asset.
+# Roughly what a vehicle needs to return its price at the rates measured in play.
 DAYS_TO_PAY_BACK = 120
 
-# Aircraft that fit a small field without crashing.
+# Aircraft small enough not to crash at a commuter field.
 SMALL_PLANE = 1
+
+_VEHICLE_TYPE = {"air": "aircraft", "road": "road", "rail": "rail", "water": "ship"}
 
 
 class BuyAndDispatch(CodedTool):
-    """One vehicle, ordered between two stations, verified to be running."""
+    """Vehicles for the route just built, ordered between its two ends and running."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
         gateway = NttdGateway(sly_data)
+        # Which route to buy for. Growth is adding vehicles to a route that is already
+        # carrying, so an existing one can be named by its town; otherwise the newest.
+        routes = sly_data.get("routes") or []
+        route = sly_data.get("route") or {}
+        wanted_town = args.get("town")
+        if wanted_town:
+            for candidate in routes:
+                if wanted_town in (candidate.get("towns") or []):
+                    route = candidate
+                    break
+        if not route.get("stations"):
+            return {
+                "bought": 0,
+                "why": "no route yet. Call build_route first: a vehicle with nowhere to go "
+                       "earns nothing and still costs running money.",
+            }
+
         position = sly_data.get("position") or {}
         days_left = position.get("days_left")
-
         if days_left is not None and days_left < DAYS_TO_PAY_BACK:
             return {
-                "bought": False,
-                "why": (
-                    f"{days_left} days left, and a vehicle needs about {DAYS_TO_PAY_BACK} "
-                    "to return its price. Cash scores more than a depreciating asset."
-                ),
+                "bought": 0,
+                "why": f"{days_left} days left and a vehicle needs about {DAYS_TO_PAY_BACK} "
+                       "to return its price. Holding cash scores more.",
             }
 
-        # Nothing to serve means nothing to buy. The network once had no way to build at
-        # all, so buying was the only action available to it and it bought aircraft with
-        # nowhere to land; this refuses that rather than spending the money.
-        stations = await gateway.query("get_stations") or []
-        if len(stations) < 2:
-            return {
-                "bought": False,
-                "why": (
-                    f"{len(stations)} station(s) exist. Build a route first: a vehicle with "
-                    "nowhere to go earns nothing and still costs running money."
-                ),
-            }
+        mode = str(route.get("mode") or "air")
+        wanted = max(1, min(int(args.get("count") or 1), 4))
+        engine = await _engine_for(gateway, mode, route)
+        if mode == "rail" and not route.get("wagon_id"):
+            wagon = await _wagon_for(gateway, route)
+            if wagon is None:
+                return {"bought": 0, "why": "no wagon that carries this cargo"}
+            route["wagon_id"] = wagon["id"]
+        if engine is None:
+            return {"bought": 0, "why": f"no buyable {_VEHICLE_TYPE.get(mode, mode)} engine"}
 
-        engine = int(args["engine_id"])
-        depot = (int(args["depot_x"]), int(args["depot_y"]))
-        stations = [int(s) for s in args["station_ids"]]
+        depot = route.get("depot")
+        if not depot:
+            return {"bought": 0, "why": "the route has no depot or hangar to buy into"}
 
+        # ONE step for every purchase rather than one step each. A step is a game day, so
+        # buying four vehicles one at a time spent four days of a 366 day run on paperwork.
+        before = {v["id"] for v in (await gateway.query("get_vehicles") or [])}
         bought = await gateway.act([
-            gateway.envelope("buy_vehicle", engine_id=engine, depot_x=depot[0], depot_y=depot[1])
+            _purchase(gateway, mode, engine, depot, route)
+            for _ in range(wanted)
         ])
-        made = (bought[0].get("changed_entities") or {}) if bought else {}
-        vehicle = made.get("vehicle_id")
-        if not vehicle:
-            return {"bought": False, "why": bought[0].get("error") if bought else "no reply"}
+        refused = [r.get("error") for r in bought if r.get("status") != "success"]
+        after = [v for v in (await gateway.query("get_vehicles") or []) if v["id"] not in before]
+        if not after:
+            return {"bought": 0, "why": refused[0] if refused else "nothing was bought",
+                    "engine_tried": engine["name"]}
 
-        orders = [
-            gateway.envelope(
-                "add_order", vehicle_id=vehicle, station_id=station,
-                # Take what is there. Full load parks a vehicle on a slow source.
-                order_flags=0,
-            )
-            for station in stations
-        ]
-        await gateway.act([*orders, gateway.envelope("start_vehicle", vehicle_id=vehicle)])
+        # Orders and starts for every new vehicle, also in one step.
+        stations = route["stations"][:2]
+        batch: list[dict[str, Any]] = []
+        for vehicle in after:
+            for station in stations:
+                batch.append(gateway.envelope(
+                    "add_order", vehicle_id=vehicle["id"], station_id=station, order_flags=0,
+                ))
+            batch.append(gateway.envelope("start_vehicle", vehicle_id=vehicle["id"]))
+        await gateway.act(batch)
 
-        return {"bought": True, "vehicle_id": vehicle, "check": "confirm it moves next step"}
+        return {
+            "bought": len(after),
+            "engine": engine["name"],
+            "vehicles": [v["id"] for v in after],
+            "refused": refused,
+            "next": "let time pass, then read the position: a vehicle that is not moving is "
+                    "the thing to fix before buying more",
+        }
 
 
-def choose_plane(engines: list[dict], airport_takes_big: bool) -> dict | None:
-    """The best aircraft this field will not destroy.
+async def _wagon_for(gateway: NttdGateway, route: dict) -> dict | None:
+    """A wagon for what this route carries, biggest first.
 
-    Capacity per unit of running cost, among the types that can land here. A big plane at a
-    commuter field is not a trade-off, it is a crash with no warning: three aircraft were
-    lost that way in one run before the type was checked.
+    Chosen rather than guessed for the same reason as the engine: an id the model invents is
+    an id the game refuses.
     """
-    usable = [
-        engine for engine in engines
-        if airport_takes_big or engine.get("plane_type") == SMALL_PLANE
+    engines = await gateway.query("get_engines", {"vehicle_type": "rail"}) or []
+    wanted = int(route.get("cargo_id") or 0)
+    wagons = [
+        e for e in engines
+        if e.get("is_wagon") and (e.get("cargo_type") in (wanted, None) or wanted == 0)
     ]
+    if not wagons:
+        return None
+    return max(wagons, key=lambda e: e.get("capacity") or 0)
+
+
+def _purchase(
+    gateway: NttdGateway, mode: str, engine: dict, depot: dict, route: dict
+) -> dict[str, Any]:
+    """One purchase, in the form the mode requires.
+
+    Rail is not bought, it is ASSEMBLED. buy_vehicle gives a locomotive on its own, and
+    buying wagons separately half worked: the loco and one wagon appeared, three more failed
+    and nothing was attached. build_train takes the engine, the wagon, how many and the cargo
+    and produces a whole train.
+    """
+    if mode != "rail":
+        return gateway.envelope(
+            "buy_vehicle", engine_id=engine["id"], depot_x=depot["x"], depot_y=depot["y"],
+        )
+    return gateway.envelope(
+        "build_train",
+        engine_id=engine["id"],
+        wagon_id=int(route.get("wagon_id") or 0),
+        num_wagons=4,
+        depot_x=depot["x"], depot_y=depot["y"],
+        cargo_id=int(route.get("cargo_id") or 0),
+    )
+
+
+async def _engine_for(gateway: NttdGateway, mode: str, route: dict) -> dict | None:
+    """A engine the game will actually sell, that fits what was built.
+
+    get_engines only returns what is buildable now, so the id comes from there and never
+    from a guess. The filtering after that is what stops a vehicle being bought that cannot
+    use the thing it was bought for.
+    """
+    engines = await gateway.query(
+        "get_engines", {"vehicle_type": _VEHICLE_TYPE.get(mode, "aircraft")},
+    ) or []
+    usable = [e for e in engines if not e.get("is_wagon")]
+
+    if mode == "air" and not route.get("takes_big_planes", True):
+        # A large aircraft at a commuter field crashes, with no warning and no refusal.
+        usable = [e for e in usable if e.get("plane_type") == SMALL_PLANE]
+    if mode == "rail":
+        # Only what can run on the track that was actually laid.
+        laid = int(route.get("rail_type") or 0)
+        usable = [e for e in usable if e.get("rail_type") == laid]
+
     if not usable:
         return None
+    # Capacity per unit of running cost: what it carries against what it costs to keep.
     return max(usable, key=lambda e: (e.get("capacity") or 0) / max(e.get("running_cost") or 1, 1))
-
-
-def choose_loco(engines: list[dict], rail_type: int) -> dict | None:
-    """A locomotive that can run on the track that was actually laid."""
-    usable = [
-        engine for engine in engines
-        if not engine.get("is_wagon") and engine.get("rail_type") == rail_type
-    ]
-    if not usable:
-        return None
-    return max(usable, key=lambda e: e.get("power") or 0)
