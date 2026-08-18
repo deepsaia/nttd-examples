@@ -1,6 +1,6 @@
 """Play one nttd session with a neuro-san agent network, until the world ends.
 
-    uv run python -m examples.neuro_san_play --session <id> --token <token> --network nttd_air
+    uv run python -m examples.neuro_san_play --session <id> --token <token> --network ns_air_agent
 
 Named for the system it drives. Everything in it is neuro-san specific: it holds a
 conversation with an agent network over neuro-san's own client, and a different approach,
@@ -104,7 +104,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Play an nttd session with a neuro-san network")
     parser.add_argument("--session", required=True, help="Session id")
     parser.add_argument("--token", default=os.environ.get("NTTD_TOKEN", ""), help="Participant token")
-    parser.add_argument("--network", default="nttd_air", help="Which agent network to run")
+    parser.add_argument("--network", default="ns_air_agent", help="Which agent network to run")
     parser.add_argument("--host", default="localhost", help="Where neuro-san is serving")
     parser.add_argument("--port", type=int, default=8080, help="neuro-san HTTP port")
     # A backstop, not a schedule. The run ends when the world does; this only stops a loop

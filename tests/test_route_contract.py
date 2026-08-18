@@ -244,13 +244,29 @@ class TestTheRunnerActsOnRefusals:
         assert "action_type" in fields
         assert "error" in fields
 
-    def test_the_runner_feeds_refusals_back_into_the_next_decision(self) -> None:
-        """Logging a refusal is not acting on one. The system has to remember it, or it
-        proposes the same action next step."""
+    def test_a_refusal_is_remembered_and_blocks_the_same_call(self) -> None:
+        """Logging a refusal is not acting on one. Something has to remember it.
+
+        This used to check the LangGraph runner, which read action_results and fed them
+        back. That runner is gone and the responsibility moved into the tools, which is the
+        better place: the gateway records every refusal as it happens, and the plan refuses
+        to submit anything already refused. Measured before that existed: one purchase
+        submitted 35 times, every one refused with the same error.
+        """
+        import pathlib
+        import sys
+
+        tools = pathlib.Path(__file__).resolve().parents[1] / "agents/neuro_san/coded_tools"
+        sys.path.insert(0, str(tools))
+        try:
+            from ns.gateway import NttdGateway
+            from ns.plan import Plan
+        finally:
+            sys.path.remove(str(tools))
+
         import inspect
 
-        from examples import langgraph_runner
-
-        source = inspect.getsource(langgraph_runner.play)
-        assert "action_results" in source
-        assert "system.learn" in source
+        assert "action_results" in inspect.getsource(NttdGateway.step)
+        assert "_remember" in inspect.getsource(NttdGateway.step)
+        # And the plan compares what is staged against what was refused before submitting.
+        assert "already_refused" in inspect.getsource(Plan)

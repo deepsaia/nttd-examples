@@ -10,7 +10,8 @@ and is told nothing about why. So the literal is hard coded here and is never an
 **A big plane at a small field crashes**, with no warning and no refusal from the action that
 sent it there. Three aircraft were lost that way before plane_type was checked against the
 airport. The WORSE of the two ends decides: a big plane only when both ends are AT_LARGE,
-AT_METROPOLITAN, AT_INTERNATIONAL or AT_INTERCON.
+AT_METROPOLITAN, AT_INTERNATIONAL or AT_INTERCON, and only when the game answered for both ends.
+all() over a one-end answer is True, so a partial answer used to read as a safe corridor.
 
 **No model ever names an engine.** The shortlist exists so a strategist can reason about the
 trade, and the id travels onward inside the tools. A run with no tool able to produce an engine
@@ -27,6 +28,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 try:
     # Loaded as part of this repository, which is how the tests import it.
     from agents.neuro_san.coded_tools.ns import constants as key
+    from agents.neuro_san.coded_tools.ns import session
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
 except ImportError:
     # Loaded by neuro-san from AGENT_TOOL_PATH, where ns and ns_air are siblings and the
@@ -34,6 +36,7 @@ except ImportError:
     # AGENT_TOOL_PATH_ONLY=true deliberately stops a class reference resolving from anywhere
     # on PYTHONPATH.
     from ns import constants as key
+    from ns import session
     from ns.gateway import NttdGateway
 
 # The one value get_engines accepts for aeroplanes. Anything else returns trains.
@@ -58,7 +61,11 @@ class ChooseAircraft(CodedTool):
     """The aeroplanes a corridor can land, best first, with one recommended."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
-        gateway = NttdGateway(sly_data)
+        return await session.guarded(self._shortlist, args, sly_data)
+
+    async def _shortlist(
+        self, gateway: NttdGateway, args: dict[str, Any], sly_data: dict[str, Any]
+    ) -> Any:
         route = route_for(sly_data, corridor_id=args.get("corridor_id"))
         if route is None:
             return (
@@ -164,13 +171,21 @@ async def airports_of(gateway: NttdGateway, route: dict[str, Any]) -> list[dict[
 
 
 def accepts_big_planes(route: dict[str, Any], airports: list[dict[str, Any]]) -> bool:
-    """Whether EVERY end of this route can take a big plane.
+    """Whether EVERY end of this route can take a big plane, on evidence about every end.
 
-    The game's own airport_type is preferred over anything the route record says, and the
-    default when nothing is known is False. A small plane at a big airport is merely
-    inefficient; a big plane at a commuter field is a write-off, and three were lost.
+    all() over a partial answer is True, and so is all() over an empty one, so a route whose
+    second airport was missing from get_hangars was judged big-plane-safe on evidence about one
+    end. That is why the count is checked first: an entry per stop, or the game's answer does not
+    get to decide. Three aircraft were lost in one measured run to a big plane sent to a commuter
+    field, which crashes with no warning and no refusal from the action that sent it.
+
+    Where the evidence is short the route record answers, and where it says nothing the answer is
+    SMALL. Assuming small is the safe direction: a small plane at a large field is merely less
+    efficient, a big one at a small field is destroyed.
     """
-    if airports:
+    stops = len(route.get("stations") or [])
+    answered = {str(entry.get("station_id")) for entry in airports}
+    if stops and len(answered) >= stops:
         return all(
             int(entry.get("airport_type", -1)) in BIG_PLANE_AIRPORTS for entry in airports
         )

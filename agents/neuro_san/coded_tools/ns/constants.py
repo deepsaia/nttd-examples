@@ -32,7 +32,10 @@ REFUSALS: Final = "refusals"
 # The surveyed map. Towns do not move and coverage does not change, so this is computed once.
 SITES: Final = "sites"
 
-# What the strategist decided and why, so a later turn can tell whether it worked.
+# What the strategist decided and why, so a later turn can tell whether it worked. It also
+# carries the build intents a `plan_` tool writes before a commit, each with a `kind` and a
+# `confirmed` flag, which is why note_decision's trim has to know the difference: an intent
+# evicted by twenty ordinary decisions is a corridor nothing can confirm afterwards.
 DECISIONS: Final = "decisions"
 
 # How many turns have been taken, which is not the same as how many game days have passed.

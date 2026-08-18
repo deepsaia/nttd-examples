@@ -25,6 +25,11 @@ the far end of a 289 tile trunk did not see its first aircraft until day 43. Bef
 harshest verdict available is "watch", or a network condemns a fleet that is simply still
 ramping.
 
+**A staged repair is not a repair.** plan_repoint records that a repoint was staged, and only
+this tool may turn that into a repoint that happened, because only this tool can see the aircraft
+move. A marker written at staging time made a refused or uncommitted commit read as a completed
+repair, which stopped a stuck vehicle being flagged at all.
+
 The vehicle ids it returns come from the game, which is what makes them safe to hand back as
 arguments to plan_repoint and plan_retire. Nothing here asks a model for an id.
 """
@@ -37,6 +42,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
     # Loaded as part of this repository, which is how the tests import it.
+    from agents.neuro_san.coded_tools.ns import session
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns_air import air_keys as air
     from agents.neuro_san.coded_tools.ns_air.choose_aircraft import AIRCRAFT
@@ -45,6 +51,7 @@ except ImportError:
     # package above them is not on the path. Both spellings are needed because
     # AGENT_TOOL_PATH_ONLY=true deliberately stops a class reference resolving from anywhere
     # on PYTHONPATH.
+    from ns import session
     from ns.gateway import NttdGateway
 
     from ns_air import air_keys as air
@@ -66,7 +73,11 @@ class AirHealthCheck(CodedTool):
     """Every aircraft, its verdict and the reason for it. Free: it costs no game day."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
-        gateway = NttdGateway(sly_data)
+        return await session.guarded(self._look, args, sly_data)
+
+    async def _look(
+        self, gateway: NttdGateway, args: dict[str, Any], sly_data: dict[str, Any]
+    ) -> Any:
         world = await gateway.observe()
         situation = await gateway.situation()
         # Company scoped and aircraft only, unlike situation's vehicle list, and it carries
@@ -170,6 +181,7 @@ def _look_at(
     if entry.get("where") != where:
         entry["where"] = where
         entry["since_day"] = day
+        _promote_staged_repoint(entry, day)
     entry["name"] = vehicle.get("name") or f"aircraft {vid}"
     entry["seen_day"] = day
 
@@ -192,8 +204,30 @@ def _look_at(
         "orders": int(vehicle.get("order_count") or 0),
         "profit_this_year": vehicle.get("profit_this_year"),
         "age_days": vehicle.get("age"),
-        "repoints": int(entry.get("repoints", 0)),
+        "repoints": int(entry.get(air.REPOINTS, 0)),
+        # Reported separately from the count, because a repoint that is staged and not yet
+        # committed has repaired nothing and a reader has to be able to tell the two apart.
+        "repoint_staged_on_day": entry.get(air.REPOINT_STAGED_DAY),
     }
+
+
+def _promote_staged_repoint(entry: dict[str, Any], day: int) -> None:
+    """Turn a staged repoint into a completed one, once the aircraft has actually moved.
+
+    plan_repoint can only record an INTENT: it stages a batch and commit_plan submits it, so at
+    staging time nothing has happened yet. Writing the accomplishment there meant a repoint that
+    was refused, or simply never committed, still counted: this check then stopped flagging a
+    vehicle that was still stuck in the same hangar, and plan_retire read the same marker as
+    "repointing has been tried" and sold it.
+
+    Movement is the evidence, and it is the one thing this function is called on: the caller has
+    just seen the aircraft somewhere other than where it was.
+    """
+    if entry.get(air.REPOINT_STAGED_DAY) is None:
+        return
+    del entry[air.REPOINT_STAGED_DAY]
+    entry[air.REPOINTED_DAY] = day
+    entry[air.REPOINTS] = int(entry.get(air.REPOINTS, 0)) + 1
 
 
 def _where(vehicle: dict[str, Any]) -> str:
@@ -261,8 +295,13 @@ def _judge(
         return "healthy", "moving, with the two station orders a route needs"
 
     reason = "; ".join(faults)
-    if entry.get("repointed_day") is not None:
-        reason = f"{reason}; last repointed on day {entry['repointed_day']}"
+    if entry.get(air.REPOINT_STAGED_DAY) is not None:
+        reason = (
+            f"{reason}; a repoint was staged on day {entry[air.REPOINT_STAGED_DAY]} and this "
+            "aircraft has not moved since, so it was never committed or it did not take"
+        )
+    elif entry.get(air.REPOINTED_DAY) is not None:
+        reason = f"{reason}; last repointed on day {entry[air.REPOINTED_DAY]}"
 
     if day < RAMP_DAYS:
         return "watch", (

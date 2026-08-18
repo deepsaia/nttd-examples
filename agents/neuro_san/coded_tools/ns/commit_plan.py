@@ -36,7 +36,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 try:
     # Loaded as part of this repository, which is how the tests import it.
     from agents.neuro_san.coded_tools.ns import constants as key
-    from agents.neuro_san.coded_tools.ns import envelope
+    from agents.neuro_san.coded_tools.ns import counting, envelope
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.plan import Plan
 except ImportError:
@@ -44,7 +44,7 @@ except ImportError:
     # and the repository above it is not on the path. Both spellings are needed because
     # AGENT_TOOL_PATH_ONLY=true deliberately stops a tool resolving from anywhere on PYTHONPATH.
     from ns import constants as key
-    from ns import envelope
+    from ns import counting, envelope
     from ns.gateway import NttdGateway
     from ns.plan import Plan
 
@@ -126,11 +126,22 @@ class CommitPlan(CodedTool):
             return f"Error: could not read the company's money ({problem}). Nothing was committed."
 
         balance = int(money.get("balance") or 0)
+        loan = int(money.get("loan") or 0)
+
+        # A staged set_loan is credited against this batch's cost, and that credit is only true if
+        # the borrowing runs BEFORE the spending, because a step executes its actions in the order
+        # given. Reordering was chosen over refusing to credit a late set_loan: the order a batch
+        # was staged in is an accident of which agent contributed first, and a corridor that funds
+        # itself is worth committing whichever way round it arrived.
+        plan.clear()
+        plan.add(*_loan_first(batch, loan))
+        batch = list(plan.actions)
+
         try:
             costed, unpriced = await _cost(gateway, batch)
         except httpx.HTTPError as problem:
             return f"Error: could not price the batch ({problem}). Nothing was committed."
-        spendable = balance + _borrowing(batch, int(money.get("loan") or 0)) - CASH_RESERVE
+        spendable = balance + _borrowing(batch, loan) - CASH_RESERVE
 
         if costed > spendable:
             return {
@@ -251,7 +262,7 @@ async def _cost(gateway: NttdGateway, batch: list[dict[str, Any]]) -> tuple[int,
             continue
         price = None
         if name == "buy_vehicle":
-            price = prices.get(_as_int((entry.get("params") or {}).get("engine_id")))
+            price = prices.get(counting.whole((entry.get("params") or {}).get("engine_id")))
         if price is None:
             unpriced.append(name)
             continue
@@ -273,23 +284,45 @@ async def _prices(gateway: NttdGateway) -> dict[int | None, int]:
         except httpx.HTTPError:
             continue
         for engine in engines or []:
-            identifier = _as_int((engine or {}).get("id"))
+            identifier = counting.whole((engine or {}).get("id"))
             if identifier is not None:
                 prices[identifier] = int((engine or {}).get("price") or 0)
     return prices
 
 
+def _loan_first(batch: list[dict[str, Any]], current_loan: int) -> list[dict[str, Any]]:
+    """The batch with a borrowing set_loan moved to the front, everything else in order.
+
+    Only a set_loan that RAISES the loan is moved. A repayment staged after a sale is money the
+    batch does not have until the sale has run, so hoisting that one would break a batch that
+    works exactly as it was staged.
+    """
+    borrowings = [
+        entry for entry in batch
+        if entry.get("action") == "set_loan"
+        and (counting.whole((entry.get("params") or {}).get("amount")) or 0) > current_loan
+    ]
+    if not borrowings:
+        return list(batch)
+    rest = [entry for entry in batch if not any(entry is moved for moved in borrowings)]
+    return borrowings + rest
+
+
 def _borrowing(batch: list[dict[str, Any]], current_loan: int) -> int:
     """How much a set_loan staged in this batch puts in the bank before the builds run.
 
-    A step executes its actions in order and then advances, so a batch that borrows and then
-    builds has the money by the time it builds. Without this, a corridor that funds itself would
-    be refused as unaffordable at the balance it had before borrowing.
+    Counted only for a set_loan that PRECEDES the first action that spends, which is what
+    _loan_first has already arranged. Both halves are needed: crediting a set_loan wherever it
+    sits would credit money the step has not borrowed yet at the moment the build executes, and
+    without the reordering a late set_loan would lose its credit and the batch would be refused as
+    unaffordable at the balance it had before borrowing.
     """
     wanted: int | None = None
     for entry in batch:
+        if _spends(str(entry.get("action") or "")):
+            break
         if entry.get("action") == "set_loan":
-            wanted = _as_int((entry.get("params") or {}).get("amount"))
+            wanted = counting.whole((entry.get("params") or {}).get("amount"))
     if wanted is None:
         return 0
     return max(0, wanted - current_loan)
@@ -319,10 +352,3 @@ def _verdicts(group: list[dict[str, Any]], results: list[dict[str, Any]]) -> lis
             "result": outcome.get("changed_entities") or {},
         })
     return paired
-
-
-def _as_int(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None

@@ -31,6 +31,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
     from agents.neuro_san.coded_tools.ns import constants as key
+    from agents.neuro_san.coded_tools.ns import counting
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.observation import our_company, our_vehicles, world
 except ImportError:
@@ -38,6 +39,7 @@ except ImportError:
     # and the repository above it is not on the path. Both spellings are needed because
     # AGENT_TOOL_PATH_ONLY=true deliberately stops a tool resolving from anywhere on PYTHONPATH.
     from ns import constants as key
+    from ns import counting
     from ns.gateway import NttdGateway
     from ns.observation import our_company, our_vehicles, world
 
@@ -58,8 +60,9 @@ class AdvanceDays(CodedTool):
         except ValueError as problem:
             return f"Error: {problem}. The runner supplies these; nothing here can invent them."
 
-        asked = _as_int(args.get("days"))
-        wanted = max(1, min(asked if asked is not None else DEFAULT_DAYS, MOST_DAYS_AT_ONCE))
+        wanted, note_on_days = counting.counted(
+            args.get("days"), DEFAULT_DAYS, most=MOST_DAYS_AT_ONCE
+        )
 
         try:
             # The turn's cached world, which every tool that steps keeps current, so the
@@ -113,11 +116,9 @@ class AdvanceDays(CodedTool):
             "session_ended": ended,
             "changed": _difference(before, latest),
         }
-        if asked is not None and asked > MOST_DAYS_AT_ONCE:
-            report["capped"] = (
-                f"{asked} days was asked for and {MOST_DAYS_AT_ONCE} is the most one call may "
-                "pass, so the rest of the run is still there to decide about"
-            )
+        # Said rather than applied in silence, because a network that asked for half a year and got
+        # four months cannot otherwise tell the two apart.
+        report.update(counting.said(note_on_days))
         if ended:
             report["end_reason"] = end_reason
             report["note"] = "the run is over; nothing further can be built, bought or waited on"
@@ -160,10 +161,3 @@ def _difference(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]
 
 def _delta(was: dict[str, Any], now: dict[str, Any], field: str) -> int:
     return int(now.get(field) or 0) - int(was.get(field) or 0)
-
-
-def _as_int(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None

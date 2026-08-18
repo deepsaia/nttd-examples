@@ -13,6 +13,9 @@ to have achieved. About 90 days is the honest interval for anything about whethe
 
 The game date is recorded rather than the wall clock. `game_date` is days since year 0, so
 comparing dates is subtraction and there is no calendar to get wrong.
+
+The list is shared with the build intents a `plan_` tool writes before its commit, so the trim
+here is kind-aware: an unconfirmed intent is never evicted, however many decisions follow it.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
     from agents.neuro_san.coded_tools.ns import constants as key
+    from agents.neuro_san.coded_tools.ns import counting
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.observation import world
 except ImportError:
@@ -31,6 +35,7 @@ except ImportError:
     # and the repository above it is not on the path. Both spellings are needed because
     # AGENT_TOOL_PATH_ONLY=true deliberately stops a tool resolving from anywhere on PYTHONPATH.
     from ns import constants as key
+    from ns import counting
     from ns.gateway import NttdGateway
     from ns.observation import world
 
@@ -65,7 +70,7 @@ class NoteDecision(CodedTool):
         except httpx.HTTPError as problem:
             return f"Error: could not read the game date ({problem}). Nothing was recorded."
 
-        review_in = _as_int(args.get("review_in_days"))
+        review_in = counting.whole(args.get("review_in_days"))
         record: dict[str, Any] = {
             "decision": decision,
             "because": because,
@@ -76,11 +81,11 @@ class NoteDecision(CodedTool):
 
         decisions: list[dict[str, Any]] = sly_data.setdefault(key.DECISIONS, [])
         decisions.append(record)
-        del decisions[:-DECISIONS_KEPT]
+        decisions[:] = _kept(decisions)
 
         due = [
             entry for entry in decisions
-            if entry is not record and _as_int(entry.get("review_on_day")) is not None
+            if entry is not record and counting.whole(entry.get("review_on_day")) is not None
             and int(entry["review_on_day"]) <= today
         ]
         report: dict[str, Any] = {
@@ -107,8 +112,20 @@ async def _game_date(gateway: NttdGateway, sly_data: dict[str, Any]) -> int:
     return int(((await world(gateway, sly_data)).get("game") or {}).get("game_date") or 0)
 
 
-def _as_int(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+def _kept(decisions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The trim, which counts only plain decisions and never evicts an unconfirmed intent.
+
+    plan_build_corridor writes its pending corridor into this same list and confirm_airports
+    reads it back to prove each airport landed in the town it was built for. A trim that counted
+    every record deleted that intent on the twenty-first decision of a long run, and the check it
+    feeds is the one that catches a misplaced airport, the failure that cost a run 55 rating
+    points, 118 against 173. An intent stops being protected the moment it is confirmed.
+    """
+    plain = [entry for entry in decisions if not _is_pending_intent(entry)]
+    evicted = {id(entry) for entry in plain[:-DECISIONS_KEPT]}
+    return [entry for entry in decisions if id(entry) not in evicted]
+
+
+def _is_pending_intent(entry: dict[str, Any]) -> bool:
+    """Whether this record is a staged intent still waiting for the tool that confirms it."""
+    return bool(entry.get("kind")) and not entry.get("confirmed")

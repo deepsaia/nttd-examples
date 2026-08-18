@@ -29,12 +29,14 @@ from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
     from agents.neuro_san.coded_tools.ns import constants as key
-    from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
+    from agents.neuro_san.coded_tools.ns import session
+    from agents.neuro_san.coded_tools.ns.gateway import NttdGateway, QueryRefused
     from agents.neuro_san.coded_tools.ns_air import air_rules
     from agents.neuro_san.coded_tools.ns_air.plan_build_corridor import CORRIDOR_INTENT
 except ImportError:
     from ns import constants as key
-    from ns.gateway import NttdGateway
+    from ns import session
+    from ns.gateway import NttdGateway, QueryRefused
 
     from ns_air import air_rules
     from ns_air.plan_build_corridor import CORRIDOR_INTENT
@@ -44,8 +46,11 @@ class ConfirmAirports(CodedTool):
     """Reads back what was built, checks it against what was intended, and records the route."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
-        gateway = NttdGateway(sly_data)
+        return await session.guarded(self._confirm, args, sly_data)
 
+    async def _confirm(
+        self, gateway: NttdGateway, args: dict[str, Any], sly_data: dict[str, Any]
+    ) -> Any:
         waiting = [
             decision for decision in (sly_data.get(key.DECISIONS) or [])
             if decision.get("kind") == CORRIDOR_INTENT and not decision.get("confirmed")
@@ -61,7 +66,10 @@ class ConfirmAirports(CodedTool):
         try:
             stations = await gateway.query("get_stations") or []
             hangars = await gateway.query("get_hangars") or []
-        except httpx.HTTPError as exception:
+        except (httpx.HTTPError, QueryRefused) as exception:
+            # Kept rather than left to the shared guard: what a caller has to be told here is that
+            # the route was NOT recorded, so buying aircraft for it now buys them for a corridor
+            # nothing has checked.
             return (
                 f"Error: nttd did not answer ({exception}), so what was built is still unknown. "
                 "Nothing was recorded. Call this again before buying any aircraft."

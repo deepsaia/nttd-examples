@@ -21,6 +21,11 @@ working aircraft.
 
 **The proceeds are not money yet.** The round trip is 20 to 35 game days on a long leg. A run
 that spent the expected proceeds while the aircraft was still flying bottomed out at 7,707.
+
+**A staged sale is not an attempt.** This tool stages and commit_plan submits, so the allowance of
+three sale attempts is spent only once a commit has carried one and the aircraft is still in the
+fleet. Counted at staging time, three plans nobody committed exhausted it and the tool reported
+refusals the game had never been asked for.
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
     # Loaded as part of this repository, which is how the tests import it.
+    from agents.neuro_san.coded_tools.ns import session
     from agents.neuro_san.coded_tools.ns.envelope import action, check
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.plan import Plan
@@ -43,6 +49,7 @@ except ImportError:
     # package above them is not on the path. Both spellings are needed because
     # AGENT_TOOL_PATH_ONLY=true deliberately stops a class reference resolving from anywhere
     # on PYTHONPATH.
+    from ns import session
     from ns.envelope import action, check
     from ns.gateway import NttdGateway
     from ns.plan import Plan
@@ -62,7 +69,11 @@ class PlanRetire(CodedTool):
     """Send a hopeless aircraft to a hangar, and sell it on a later call once it is there."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
-        gateway = NttdGateway(sly_data)
+        return await session.guarded(self._stage_disposal, args, sly_data)
+
+    async def _stage_disposal(
+        self, gateway: NttdGateway, args: dict[str, Any], sly_data: dict[str, Any]
+    ) -> Any:
         record = sly_data.get(air.HEALTH) or {}
         seen = record.get("vehicles") or {}
         retiring = sly_data.setdefault(air.RETIRING, {})
@@ -85,7 +96,9 @@ class PlanRetire(CodedTool):
         # The sweep runs first, over the aircraft already in the pipeline, and only then are new
         # ones sent. That ordering is what guarantees this tool can never stage send_to_depot
         # and sell_vehicle for the same aircraft in one step.
-        batch, selling, waiting, done = _sweep(retiring, owned, day)
+        batch, selling, waiting, done = _sweep(
+            retiring, owned, day, _sales_still_staged(Plan(sly_data))
+        )
 
         targets, refusal = _targets(args, seen, owned, retiring, day)
         sent: list[dict[str, Any]] = []
@@ -121,7 +134,7 @@ class PlanRetire(CodedTool):
         return {
             "staged": plan.describe()[-len(batch):],
             "sent_to_hangar": sent,
-            "being_sold": selling,
+            "sales_staged": selling,
             "awaiting_sale": waiting,
             "sold": done,
             "note": refusal,
@@ -139,10 +152,24 @@ class PlanRetire(CodedTool):
         }
 
 
+def _sales_still_staged(plan: Plan) -> set[str]:
+    """The vehicle ids whose sale is sitting in the plan, unsubmitted.
+
+    commit_plan clears the plan when it submits, so an action that is no longer in it is an action
+    a commit carried. That is the only evidence available here that a staged sale was ever really
+    asked of the game, and it is what separates a refusal from a batch nobody committed.
+    """
+    return {
+        str((entry.get("params") or {}).get("vehicle_id"))
+        for entry in plan.actions if entry.get("action") == "sell_vehicle"
+    }
+
+
 def _sweep(
     retiring: dict[str, Any],
     owned: dict[str, dict[str, Any]],
     day: int,
+    still_staged: set[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
     """Move every aircraft already in the pipeline as far as the game allows today."""
     batch: list[dict[str, Any]] = []
@@ -169,7 +196,20 @@ def _sweep(
             })
             continue
 
-        attempts = int(entry.get("sell_attempts", 0))
+        if vid in still_staged:
+            # The sale this tool staged on an earlier call is in the plan and has not been sent,
+            # so staging a second one would submit two sales for one aircraft.
+            waiting.append({
+                "vehicle_id": int(vid),
+                "name": name,
+                "state": (
+                    "stopped in its hangar with its sale already staged and not committed. "
+                    "commit_plan submits it; nothing more is needed here"
+                ),
+            })
+            continue
+
+        attempts = _sales_the_game_refused(entry)
         if attempts >= SELL_ATTEMPTS:
             waiting.append({
                 "vehicle_id": int(vid),
@@ -182,12 +222,33 @@ def _sweep(
             continue
 
         batch.append(action("sell_vehicle", vehicle_id=int(vid)))
-        entry["stage"] = "selling"
-        entry["sell_attempts"] = attempts + 1
-        entry["sell_day"] = day
+        # The intent, in the same shape plan_repoint uses. An attempt is only counted once a
+        # commit has carried this action and the aircraft is still here, because a batch that was
+        # never committed is not a refusal and three of those used to exhaust the allowance
+        # without the game ever having been asked.
+        entry["stage"] = "sell_staged"
+        entry[air.SELL_STAGED_DAY] = day
         selling.append({"vehicle_id": int(vid), "name": name, "why": entry.get("why")})
 
     return batch, selling, waiting, done
+
+
+def _sales_the_game_refused(entry: dict[str, Any]) -> int:
+    """How many sales the game has actually refused for this aircraft, promoting any staged one.
+
+    A staged sale that has left the plan was carried by a commit, and this aircraft is still in the
+    fleet and still stopped in its hangar, so the game refused it. That is the moment it becomes an
+    attempt. Counted at staging time instead, a plan nobody committed spent the whole allowance and
+    the tool reported "3 sale attempts were refused" about a sale the game was never asked for.
+    """
+    staged = entry.get(air.SELL_STAGED_DAY)
+    attempts = int(entry.get(air.SELL_ATTEMPTS, 0))
+    if staged is None:
+        return attempts
+    del entry[air.SELL_STAGED_DAY]
+    attempts += 1
+    entry[air.SELL_ATTEMPTS] = attempts
+    return attempts
 
 
 def _targets(
@@ -225,9 +286,10 @@ def _targets(
     if not hopeless:
         return [], (
             "no aircraft is hopeless. One qualifies only after the health check has called it "
-            f"stuck, plan_repoint has been tried on it, and {REPOINT_GRACE_DAYS} days have "
-            "passed since without it moving. Repointing is cheaper than replacing, so it goes "
-            "first."
+            "stuck, a repoint has been committed and seen to take effect, and "
+            f"{REPOINT_GRACE_DAYS} days have passed since without it moving. Repointing is "
+            "cheaper than replacing, so it goes first, and a repoint that was staged and never "
+            "committed does not count as having been tried."
         )
     return hopeless, ""
 
@@ -244,12 +306,16 @@ def _is_hopeless(
     Every clause is load-bearing. Without the repoint clause this sells an aircraft that a free
     order fix would have saved; without the elapsed-days clause it sells one that was on its way
     back when it was looked at.
+
+    The completed marker is read and the staged one deliberately is not. A repoint that was staged
+    and never committed repaired nothing, and treating it as tried is how an aircraft that had
+    never actually been repointed became hopeless and was sold.
     """
     if vid not in owned or vid in retiring:
         return False
     if entry.get("verdict") != "stuck":
         return False
-    repointed = entry.get("repointed_day")
+    repointed = entry.get(air.REPOINTED_DAY)
     if repointed is None:
         return False
     return day - int(repointed) >= REPOINT_GRACE_DAYS

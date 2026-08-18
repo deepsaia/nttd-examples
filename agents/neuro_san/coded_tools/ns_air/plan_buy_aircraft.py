@@ -27,6 +27,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
     # Loaded as part of this repository, which is how the tests import it.
+    from agents.neuro_san.coded_tools.ns import counting, session
     from agents.neuro_san.coded_tools.ns.envelope import action, check
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.plan import Plan
@@ -42,6 +43,7 @@ except ImportError:
     # package above them is not on the path. Both spellings are needed because
     # AGENT_TOOL_PATH_ONLY=true deliberately stops a class reference resolving from anywhere
     # on PYTHONPATH.
+    from ns import counting, session
     from ns.envelope import action, check
     from ns.gateway import NttdGateway
     from ns.plan import Plan
@@ -65,7 +67,11 @@ class PlanBuyAircraft(CodedTool):
     """Aircraft for a corridor, staged into the plan and bought in one game day."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
-        gateway = NttdGateway(sly_data)
+        return await session.guarded(self._stage_purchase, args, sly_data)
+
+    async def _stage_purchase(
+        self, gateway: NttdGateway, args: dict[str, Any], sly_data: dict[str, Any]
+    ) -> Any:
         route = route_for(sly_data, town=args.get("town"))
         if route is None:
             return (
@@ -95,7 +101,7 @@ class PlanBuyAircraft(CodedTool):
                 "bought at a hangar tile, and that tile cannot be worked out from the airport."
             )
 
-        wanted = max(1, min(int(args.get("count") or 1), MOST_AT_ONCE))
+        wanted, note_on_count = counting.counted(args.get("count"), 1, most=MOST_AT_ONCE)
         purchases = [
             action("buy_vehicle", engine_id=int(engine["id"]), **hangar) for _ in range(wanted)
         ]
@@ -130,7 +136,7 @@ class PlanBuyAircraft(CodedTool):
                 "them their orders. A vehicle id does not exist until the purchase is "
                 "committed, which is why the orders cannot go in this batch."
             ),
-        }
+        } | counting.said(note_on_count)
 
 
 def unconfirmed(route: dict[str, Any]) -> str | None:
@@ -194,7 +200,7 @@ async def hangar_for(
     and large, +4 in x for commuter and +3 in y for international, and four buy_vehicle calls at
     an airport's own coordinates failed ERR_UNKNOWN with no diagnostic at all.
     """
-    for recorded in (route.get("hangar"), route.get("depot"), *_recorded_hangars(route)):
+    for recorded in (route.get("hangar"), route.get("depot"), *recorded_hangars(route)):
         params = _depot_params(recorded)
         if params:
             return params
@@ -208,8 +214,11 @@ async def hangar_for(
     return None
 
 
-def _recorded_hangars(route: dict[str, Any]) -> list[Any]:
+def recorded_hangars(route: dict[str, Any]) -> list[Any]:
     """Whatever confirm_airports cached under `hangars`, as a flat list of candidates.
+
+    Public because plan_dispatch reads the same records from the other direction, asking which
+    route a hangar belongs to rather than where to buy, and one reader of this shape is enough.
 
     A mapping of station to hangar and a list of hangar records are both handled, and the keys
     are not read at all. sly_data crosses the turn boundary as JSON and JSON has no integer

@@ -27,7 +27,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
     from agents.neuro_san.coded_tools.ns import constants as key
-    from agents.neuro_san.coded_tools.ns import envelope
+    from agents.neuro_san.coded_tools.ns import counting, envelope
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.observation import our_company
 except ImportError:
@@ -35,7 +35,7 @@ except ImportError:
     # and the repository above it is not on the path. Both spellings are needed because
     # AGENT_TOOL_PATH_ONLY=true deliberately stops a tool resolving from anywhere on PYTHONPATH.
     from ns import constants as key
-    from ns import envelope
+    from ns import counting, envelope
     from ns.gateway import NttdGateway
     from ns.observation import our_company
 
@@ -52,7 +52,7 @@ class SetLoanTo(CodedTool):
         except ValueError as problem:
             return f"Error: {problem}. The runner supplies these; nothing here can invent them."
 
-        amount = _as_int(args.get("amount"))
+        amount = counting.whole(args.get("amount"))
         if amount is None or amount < 0:
             return (
                 "Error: amount must be a whole number of pounds, and set_loan sets the loan to "
@@ -104,10 +104,3 @@ class SetLoanTo(CodedTool):
             report["session_ended"] = True
             report["end_reason"] = result.get("end_reason") or "the run reached its day budget"
         return report
-
-
-def _as_int(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None

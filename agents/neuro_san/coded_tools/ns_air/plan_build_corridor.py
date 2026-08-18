@@ -27,14 +27,14 @@ from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
     from agents.neuro_san.coded_tools.ns import constants as key
-    from agents.neuro_san.coded_tools.ns import envelope
-    from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
+    from agents.neuro_san.coded_tools.ns import envelope, session
+    from agents.neuro_san.coded_tools.ns.gateway import NttdGateway, QueryRefused
     from agents.neuro_san.coded_tools.ns.plan import Plan
     from agents.neuro_san.coded_tools.ns_air.rank_corridors import corridor_key, corridors_from_sites
 except ImportError:
     from ns import constants as key
-    from ns import envelope
-    from ns.gateway import NttdGateway
+    from ns import envelope, session
+    from ns.gateway import NttdGateway, QueryRefused
     from ns.plan import Plan
 
     from ns_air.rank_corridors import corridor_key, corridors_from_sites
@@ -48,7 +48,11 @@ class PlanBuildCorridor(CodedTool):
     """Stages the two airports of a named corridor. Builds nothing until the plan is committed."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
-        gateway = NttdGateway(sly_data)
+        return await session.guarded(self._stage_corridor, args, sly_data)
+
+    async def _stage_corridor(
+        self, gateway: NttdGateway, args: dict[str, Any], sly_data: dict[str, Any]
+    ) -> Any:
         corridor_id = str(args.get("corridor_id") or "").strip()
         if not corridor_id:
             return (
@@ -109,7 +113,10 @@ class PlanBuildCorridor(CodedTool):
         # new. Reading it after the commit cannot separate these airports from any other.
         try:
             existing = [int(station["id"]) for station in await gateway.query("get_stations") or []]
-        except httpx.HTTPError as exception:
+        except (httpx.HTTPError, QueryRefused) as exception:
+            # Caught here rather than by the shared guard because the actions are already on the
+            # plan by this point, and a guard that only wrote an Error string would leave two
+            # airports staged for a corridor whose anchor was never recorded.
             del plan.actions[-len(actions):]
             return (
                 f"Error: nttd did not answer get_stations ({exception}), so the corridor was not "

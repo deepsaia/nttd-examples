@@ -37,13 +37,15 @@ from neuro_san.interfaces.coded_tool import CodedTool
 try:
     # Loaded as part of this repository, which is how the tests import it.
     from agents.neuro_san.coded_tools.ns import constants as key
-    from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
+    from agents.neuro_san.coded_tools.ns import counting, session
+    from agents.neuro_san.coded_tools.ns.gateway import NttdGateway, QueryRefused
     from agents.neuro_san.coded_tools.ns_air import air_rules
 except ImportError:
     # Loaded by neuro-san from AGENT_TOOL_PATH, where `ns` and `ns_air` are packages beside
     # the module being loaded and the packages above them are not on the path.
     from ns import constants as key
-    from ns.gateway import NttdGateway
+    from ns import counting, session
+    from ns.gateway import NttdGateway, QueryRefused
 
     from ns_air import air_rules
 
@@ -66,8 +68,12 @@ class SurveyAirportSites(CodedTool):
     """Every town worth an airport, with the biggest field that still covers it."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
-        gateway = NttdGateway(sly_data)
-        limit = int(args.get("limit") or DEFAULT_LIMIT)
+        return await session.guarded(self._sites, args, sly_data)
+
+    async def _sites(
+        self, gateway: NttdGateway, args: dict[str, Any], sly_data: dict[str, Any]
+    ) -> Any:
+        limit, note_on_limit = counting.counted(args.get("limit"), DEFAULT_LIMIT)
 
         remembered = sly_data.get(key.SITES) or []
         if remembered:
@@ -75,11 +81,14 @@ class SurveyAirportSites(CodedTool):
                 "sites": remembered[:limit],
                 "surveyed": len(remembered),
                 "from_cache": True,
-            }
+            } | counting.said(note_on_limit)
 
         try:
             sites = await _survey(gateway)
-        except httpx.HTTPError as exception:
+        except (httpx.HTTPError, QueryRefused) as exception:
+            # Kept rather than left to the shared guard, because the sentence that matters here is
+            # the one about the cache: a survey that failed cached nothing, so calling again is a
+            # real retry and not the repeat the refusal ledger exists to stop.
             return (
                 f"Error: nttd did not answer the survey ({exception}). Nothing was cached, so "
                 "calling this again is a real retry rather than a repeat."
@@ -101,7 +110,7 @@ class SurveyAirportSites(CodedTool):
             "from_cache": False,
             "note": "Every site listed is inside its own airport's coverage. Name a site by its "
                     "site_id. The coordinates are the builder's business, not yours.",
-        }
+        } | counting.said(note_on_limit)
 
 
 async def _survey(gateway: NttdGateway) -> list[dict[str, Any]]:

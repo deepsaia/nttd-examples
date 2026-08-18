@@ -22,7 +22,9 @@ The route is resolved from the game, never from the model. `vehicle_id` is the o
 that may be supplied and it comes back out of air_health_check, which read it from the game:
 35 refused purchases in one measured run were made with invented ids.
 
-Nothing here calls step. Planning is free and only commit_plan spends the day.
+Nothing here calls step. Planning is free and only commit_plan spends the day, which is also why
+what this tool writes into the health record is that a repoint was STAGED. air_health_check turns
+that into a repoint that happened, once it sees the aircraft move.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 try:
     # Loaded as part of this repository, which is how the tests import it.
     from agents.neuro_san.coded_tools.ns import constants as key
+    from agents.neuro_san.coded_tools.ns import session
     from agents.neuro_san.coded_tools.ns.envelope import action, check
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.plan import Plan
@@ -53,6 +56,7 @@ except ImportError:
     # AGENT_TOOL_PATH_ONLY=true deliberately stops a class reference resolving from anywhere
     # on PYTHONPATH.
     from ns import constants as key
+    from ns import session
     from ns.envelope import action, check
     from ns.gateway import NttdGateway
     from ns.plan import Plan
@@ -73,7 +77,11 @@ class PlanRepoint(CodedTool):
     """Clear an aircraft's orders and give it its own route's two stations, then start it."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
-        gateway = NttdGateway(sly_data)
+        return await session.guarded(self._stage_repoint, args, sly_data)
+
+    async def _stage_repoint(
+        self, gateway: NttdGateway, args: dict[str, Any], sly_data: dict[str, Any]
+    ) -> Any:
         record = sly_data.get(air.HEALTH) or {}
         seen = record.get("vehicles") or {}
         if not seen:
@@ -164,13 +172,18 @@ class PlanRepoint(CodedTool):
         plan.add(*batch)
         for done in repointed:
             entry = seen[str(done["vehicle_id"])]
-            entry["repointed_day"] = day
-            entry["repoints"] = int(entry.get("repoints", 0)) + 1
-            entry["route"] = done["route"]
+            # The INTENT, not the accomplishment. Nothing has been submitted yet: commit_plan
+            # spends the day, and it may be refused or never called. An earlier version wrote
+            # repointed_day here, and a repair that never happened then read as done, so the
+            # health check stopped flagging a vehicle that was still stuck and plan_retire sold
+            # it as beyond repair. air_health_check promotes this to a completed repoint when it
+            # sees the aircraft move.
+            entry[air.REPOINT_STAGED_DAY] = day
+            entry["intended_route"] = done["route"]
 
         return {
             "staged": plan.describe()[-len(batch):],
-            "repointed": repointed,
+            "will_repoint_when_committed": repointed,
             "skipped": skipped,
             "already_refused": plan.already_refused(),
             "next": (
@@ -291,10 +304,11 @@ def _targets(
         waited = _days_since_repoint(seen[vid], day)
         if waited is not None and waited < REPOINT_GRACE_DAYS:
             return [], (
-                f"Error: {seen[vid].get('name', vid)} was repointed {waited} days ago and a "
+                f"Error: {seen[vid].get('name', vid)} had a repoint staged {waited} days ago and a "
                 f"repoint is not visible the next day. Leave it until "
                 f"{REPOINT_GRACE_DAYS - waited} more days have passed; repointing it again now "
-                f"is the loop that resubmitted the same repair forever."
+                f"is the loop that resubmitted the same repair forever. If nothing was committed, "
+                f"that is commit_plan's business rather than a second repair."
             )
         return [vid], ""
 
@@ -312,11 +326,20 @@ def _targets(
 
 
 def _days_since_repoint(entry: dict[str, Any], day: int) -> int | None:
-    """How long ago this aircraft was last repointed, or None if it never was."""
-    when = entry.get("repointed_day")
-    if when is None:
+    """How long ago this aircraft was last repointed OR had one staged, whichever is later.
+
+    The staged day counts, and it has to: the loop this window exists to stop is re-staging the
+    same repair every turn, and a batch that is waiting to be committed is exactly the case where
+    nothing has moved yet. Both days are read because a promotion writes the completed one and
+    removes the staged one.
+    """
+    days = [
+        int(entry[field]) for field in (air.REPOINT_STAGED_DAY, air.REPOINTED_DAY)
+        if entry.get(field) is not None
+    ]
+    if not days:
         return None
-    return max(0, day - int(when))
+    return max(0, day - max(days))
 
 
 def _out_of_grace(entry: dict[str, Any], day: int) -> bool:

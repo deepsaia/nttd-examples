@@ -32,3 +32,28 @@ HEALTH: Final = "air_health"
 RETIRING: Final = "air_retiring"
 
 ALLOWED: Final = (HEALTH, RETIRING)
+
+# --- fields inside those records -------------------------------------------------------------
+#
+# Named here as well, and for a second reason on top of the typo one. A plan_ tool stages a
+# batch and commit_plan submits it, so at staging time the only true thing to record is the
+# INTENT. An earlier version wrote the accomplishment instead, and a repoint that was staged and
+# never committed left a record saying the aircraft had been repaired: the health check then
+# stopped flagging a vehicle that was still stuck, and plan_retire counted the repair as tried
+# and sold it. Keeping the two spellings a pair of names apart is what makes that distinction
+# impossible to lose.
+
+# A repoint was staged on this run day. Not proof of anything: the batch may never be committed.
+REPOINT_STAGED_DAY: Final = "repoint_staged_day"
+
+# The run day a staged repoint was seen to take effect, which means the aircraft has moved.
+REPOINTED_DAY: Final = "repointed_day"
+
+# How many repoints have actually taken effect, counted only on promotion from staged.
+REPOINTS: Final = "repoints"
+
+# A sale was staged on this run day, and is not an attempt until a commit has carried it.
+SELL_STAGED_DAY: Final = "sell_staged_day"
+
+# How many sales the game has actually refused for an aircraft stopped in its hangar.
+SELL_ATTEMPTS: Final = "sell_attempts"

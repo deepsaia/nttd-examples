@@ -5,7 +5,7 @@ leg earned 74,986 in a year while small planes on 35 tile hops earned about 13,0
 distance is favoured here rather than penalised, which is the opposite sign to the road
 ranking, where a short corridor is cheap to join and saturates quickly.
 
-Two numbers decide a corridor and both are already known from the survey:
+Two figures decide a corridor and both are already known from the survey:
 
 **The smaller population.** A leg is only as full as its emptier end. A long leg into a 348
 person village returns planes empty and costs the same to fly as a leg into a city, which is
@@ -29,9 +29,11 @@ from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
     from agents.neuro_san.coded_tools.ns import constants as key
+    from agents.neuro_san.coded_tools.ns import counting
     from agents.neuro_san.coded_tools.ns_air import air_rules
 except ImportError:
     from ns import constants as key
+    from ns import counting
 
     from ns_air import air_rules
 
@@ -42,7 +44,7 @@ class RankCorridors(CodedTool):
     """Town pairs worth an air route, the longest and busiest first."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
-        limit = int(args.get("limit") or DEFAULT_LIMIT)
+        limit, note_on_limit = counting.counted(args.get("limit"), DEFAULT_LIMIT)
 
         sites = sly_data.get(key.SITES) or []
         if not sites:
@@ -64,7 +66,7 @@ class RankCorridors(CodedTool):
             "candidates": len(corridors),
             "note": "Name a corridor by its corridor_id when you build it. Both ends taking big "
                     "planes is worth more than a slightly longer leg that does not.",
-        }
+        } | counting.said(note_on_limit)
 
 
 def corridors_from_sites(

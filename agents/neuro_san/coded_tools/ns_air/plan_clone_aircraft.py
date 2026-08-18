@@ -27,6 +27,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
     # Loaded as part of this repository, which is how the tests import it.
+    from agents.neuro_san.coded_tools.ns import counting, session
     from agents.neuro_san.coded_tools.ns.envelope import action, check
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.observation import (
@@ -53,6 +54,7 @@ except ImportError:
     # package above them is not on the path. Both spellings are needed because
     # AGENT_TOOL_PATH_ONLY=true deliberately stops a class reference resolving from anywhere
     # on PYTHONPATH.
+    from ns import counting, session
     from ns.envelope import action, check
     from ns.gateway import NttdGateway
     from ns.observation import (
@@ -76,7 +78,11 @@ class PlanCloneAircraft(CodedTool):
     """More of what already works on a corridor, with its orders copied for free."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
-        gateway = NttdGateway(sly_data)
+        return await session.guarded(self._stage_clone, args, sly_data)
+
+    async def _stage_clone(
+        self, gateway: NttdGateway, args: dict[str, Any], sly_data: dict[str, Any]
+    ) -> Any:
         route = route_for(sly_data, town=args.get("town"))
         if route is None:
             return (
@@ -110,7 +116,7 @@ class PlanCloneAircraft(CodedTool):
                 "built at the original's current tile, which fails while it is in the air."
             )
 
-        wanted = max(1, min(int(args.get("count") or 1), MOST_AT_ONCE))
+        wanted, note_on_count = counting.counted(args.get("count"), 1, most=MOST_AT_ONCE)
         stranded = parked_with_orders(fleet)
         batch = [action("start_vehicle", vehicle_id=int(plane["id"])) for plane in stranded]
         batch += [
@@ -144,7 +150,7 @@ class PlanCloneAircraft(CodedTool):
                 "STOPPED and its vehicle id only exists once the clone has been committed, so "
                 "its start cannot be in this batch."
             ),
-        }
+        } | counting.said(note_on_count)
 
 
 async def _flying_this_route(
