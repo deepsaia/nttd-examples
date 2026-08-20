@@ -51,8 +51,8 @@ Four things are true whatever is being moved:
 1. A build action returning success is NOT a working route. Nothing buys a vehicle until a tool
    has confirmed a vehicle can actually get from one end to the other.
 2. A station outside its own catchment earns nothing, however well sited it looks.
-3. The score is mostly cargo delivered: 400 of the 1000 points, four times any other component.
-   A decision that moves more freight beats one that looks tidier.
+3. A transport company is judged on what it moves. Cargo delivered matters more than anything
+   else you can point at, so a decision that carries more freight beats one that looks tidier.
 4. Planning is free. Only committing a plan and letting time pass cost game days, and a batch has
    no ceiling, so build a whole corridor in one commit rather than one action at a time.
 
