@@ -58,9 +58,6 @@ SELL_STAGED_DAY: Final = "sell_staged_day"
 # How many sales the game has actually refused for an aircraft stopped in its hangar.
 SELL_ATTEMPTS: Final = "sell_attempts"
 
-# How long an aircraft has been in service, and how long it needs before a verdict about it is
-# fair. Both are written by air_health_check and read by plan_retire, which is what stops the
-# two disagreeing about when judging starts: they used to hold the same number separately.
+# How long an aircraft has been in service. Written by air_health_check so a report can say
+# "new" about a late purchase rather than judging it by how far through the run it is.
 IN_SERVICE_DAYS: Final = "in_service_days"
-
-SETTLING_DAYS: Final = "settling_days"

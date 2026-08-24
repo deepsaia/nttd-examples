@@ -90,11 +90,7 @@ class PlanCloneAircraft(CodedTool):
                 f"{known_routes(sly_data) or 'none yet'}."
             )
 
-        # A clone costs what an aircraft costs, so it is bound by the same horizon.
-        late = refuse_if_late(await gateway.observe())
-        if late:
-            return late
-
+        world = await gateway.observe()
         fleet = await gateway.query("get_vehicles", {"vehicle_type": AIRCRAFT}) or []
         flying = await _flying_this_route(gateway, route, fleet)
         if not flying:
@@ -107,6 +103,13 @@ class PlanCloneAircraft(CodedTool):
         # The busiest earner is the one worth doubling. Measured: a 289 tile trunk took 5 of 9
         # aircraft and returned 71 per cent of the profit, so more of the best beats one each.
         original = max(flying, key=lambda plane: int(plane.get("profit_this_year") or 0))
+
+        # A clone costs what its original cost, so it faces the same question: can this aircraft
+        # earn its price back in the days that remain. Priced from the original's own engine
+        # rather than from an average, and checked here because that is where the engine is known.
+        late = refuse_if_late(world, await _price_of(gateway, original))
+        if late:
+            return late
 
         hangar = await hangar_for(gateway, route)
         if hangar is None:
@@ -151,6 +154,19 @@ class PlanCloneAircraft(CodedTool):
                 "its start cannot be in this batch."
             ),
         } | counting.said(note_on_count)
+
+
+async def _price_of(gateway: NttdGateway, plane: dict[str, Any]) -> int:
+    """What the game charges for this aircraft's engine, or 0 when it cannot be read.
+
+    Zero means unknown, and the horizon check treats an unknown price as no reason to refuse: a
+    purchase should not be blocked because a lookup failed.
+    """
+    engine_id = int(plane.get("engine_id") or -1)
+    for engine in await gateway.query("get_engines", {"vehicle_type": AIRCRAFT}) or []:
+        if int(engine.get("id") or -1) == engine_id:
+            return int(engine.get("price") or 0)
+    return 0
 
 
 async def _flying_this_route(

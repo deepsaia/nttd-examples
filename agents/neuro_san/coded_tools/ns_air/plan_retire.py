@@ -41,7 +41,6 @@ try:
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.plan import Plan
     from agents.neuro_san.coded_tools.ns_air import air_keys as air
-    from agents.neuro_san.coded_tools.ns_air.air_health_check import RAMP_DAYS
     from agents.neuro_san.coded_tools.ns_air.choose_aircraft import AIRCRAFT
     from agents.neuro_san.coded_tools.ns_air.plan_repoint import REPOINT_GRACE_DAYS
 except ImportError:
@@ -55,7 +54,6 @@ except ImportError:
     from ns.plan import Plan
 
     from ns_air import air_keys as air
-    from ns_air.air_health_check import RAMP_DAYS
     from ns_air.choose_aircraft import AIRCRAFT
     from ns_air.plan_repoint import REPOINT_GRACE_DAYS
 
@@ -273,12 +271,18 @@ def _targets(
                 f"{retiring[vid].get('stage')}. Let days pass and call this tool again rather "
                 "than sending it to a hangar twice."
             )
-        if day < RAMP_DAYS:
+        # No calendar gate. This used to refuse before run day 75, and the health check held the
+        # same number separately, which is a disagreement waiting to happen. The evidence that an
+        # aircraft is worth selling is the chain below and not the date: it must have been called
+        # stuck, been repointed for real, and been given time to show the repoint did not take.
+        entry = seen.get(vid, {})
+        verdict = entry.get("verdict")
+        if verdict != "stuck":
             return [], (
-                f"Error: it is day {day} and nothing is sold before day {RAMP_DAYS}. Cargo "
-                "delivered was exactly 0 until day 73 of the best measured run, so an aircraft "
-                "that looks idle now is a fleet still ramping, and selling it sells a working "
-                "aircraft."
+                f"Error: the health check calls {entry.get('name', vid)} '{verdict or 'unseen'}' "
+                "rather than stuck, and only a stuck aircraft is worth selling. Run "
+                "air_health_check, and if it is stuck try plan_repoint first: fixing orders is "
+                "free and selling is not."
             )
         return [vid], ""
 
