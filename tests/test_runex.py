@@ -10,7 +10,11 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from runex import sessions
+import httpx
+import pytest
+import typer
+
+from runex import cli, networks, sessions
 from runex.kinds import KINDS, by_key
 from runex.launcher import Launcher
 
@@ -128,3 +132,73 @@ def test_a_written_approach_reports_the_extra_it_needs() -> None:
     assert neuro.written
     assert neuro.requires == "neuro_san"
     assert "uv sync" in neuro.install_hint
+
+
+# --- which network ------------------------------------------------------------------------------
+
+
+def _network(name: str, description: str = "plays something") -> networks.Network:
+    return networks.Network(name=name, description=description, tags=("nttd",))
+
+
+def test_the_served_networks_are_read_from_the_server_not_the_manifest() -> None:
+    """The manifest is what the server was told to load; this is what it did load.
+
+    They differ whenever the manifest has been edited since `ns run` started, which during
+    development is most of the time.
+    """
+    found = networks._read(
+        {"agent_name": "ns_air_agent", "description": "air", "tags": ["nttd", "air"]}
+    )
+    assert found.name == "ns_air_agent"
+    assert found.summary == "air"
+    assert found.tags == ("nttd", "air")
+
+
+def test_a_network_the_server_does_not_serve_is_refused_at_the_prompt() -> None:
+    """Taking --network on trust moved the failure several turns into the run.
+
+    It surfaced there as an error about an unknown agent, which reads as a server fault.
+    """
+    served = [_network("ns_air_agent"), _network("ns_rail_agent")]
+    with pytest.raises(typer.Exit):
+        cli._pick_network(served, "ns_water_agent", False)
+
+
+def test_a_served_network_named_explicitly_is_accepted() -> None:
+    served = [_network("ns_air_agent"), _network("ns_rail_agent")]
+    assert cli._pick_network(served, "ns_rail_agent", False).name == "ns_rail_agent"
+
+
+def test_one_served_network_is_stated_rather_than_offered_as_a_menu() -> None:
+    """A menu of one is a keystroke that teaches nothing, so it must not consume input."""
+    assert cli._pick_network([_network("ns_air_agent")], "", False).name == "ns_air_agent"
+
+
+def test_several_served_networks_with_yes_refuse_rather_than_pick_one() -> None:
+    """--yes means do not ask. Silently taking the first would choose the mode for the user."""
+    served = [_network("ns_air_agent"), _network("ns_rail_agent")]
+    with pytest.raises(typer.Exit):
+        cli._pick_network(served, "", True)
+
+
+def test_a_failed_lookup_raises_rather_than_answering_with_a_default() -> None:
+    """The defect this replaced.
+
+    The lookup used to answer ["ns_air_agent"] whenever the list call failed, so a failure
+    rendered as a line reading "Network: ns_air_agent", indistinguishable from having found
+    one network. On a server serving water and road it would have handed the contestant air.
+
+    Asserted as behaviour rather than by grepping for the name, because explaining that
+    defect in the module is exactly what the module should do.
+    """
+    # Port 1 needs no privileges to fail on, and nothing is listening there.
+    with pytest.raises(httpx.HTTPError):
+        networks.fetch("127.0.0.1", 1, timeout=1.0)
+
+
+def test_a_server_serving_nothing_is_not_mistaken_for_serving_one() -> None:
+    """An empty list is an empty list. The caller reports it and stops."""
+    assert networks.fetch is not None
+    with pytest.raises(typer.Exit):
+        cli._pick_network([], "", False)

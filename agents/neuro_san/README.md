@@ -98,7 +98,10 @@ uv run runex --kind neuro-san        # terminal B: pick a session and play it
 ```
 
 `runex` finds the open sessions on the nttd server, offers the token that server issued, and
-asks which network if more than one is served. By hand it is:
+asks which network when the server is serving more than one. It asks the server rather than
+reading `registries/manifest.hocon`, because the manifest is what the server was told to load
+and the answer wanted is what it did load: those differ whenever the manifest has been edited
+since `ns run` started. By hand it is:
 
 ```bash
 uv run python -m examples.neuro_san_play \

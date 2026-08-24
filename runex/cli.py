@@ -24,7 +24,7 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
 
-from runex import sessions
+from runex import networks, sessions
 from runex.kinds import KINDS, ExperimentKind, by_key
 from runex.launcher import Launcher, reachable
 
@@ -39,7 +39,6 @@ app = typer.Typer(
 DEFAULT_API_URL = "http://127.0.0.1:8000"
 DEFAULT_NS_HOST = "localhost"
 DEFAULT_NS_PORT = 8080
-FALLBACK_NETWORK = "ns_air_agent"
 
 
 @app.command()
@@ -62,7 +61,7 @@ def main(
     chosen = _choose_kind(kind)
     picked = _choose_session(api_url, session)
     if chosen.key == "neuro-san":
-        chosen = _with_network(chosen, network, ns_host, ns_port)
+        chosen = _with_network(chosen, network, ns_host, ns_port, yes)
     secret = _ask_token(api_url, picked.session_id, token, yes)
 
     launcher = Launcher(api_url)
@@ -189,52 +188,90 @@ def _state(found: sessions.Session) -> str:
 
 
 def _with_network(
-    kind: ExperimentKind, preset: str, host: str, port: int
+    kind: ExperimentKind, preset: str, host: str, port: int, unattended: bool
 ) -> ExperimentKind:
-    """Which agent network, and a check that there is a server to run it on.
-
-    Asked only when the server offers a choice. A prompt with one option is a keystroke that
-    teaches nothing.
-    """
+    """Which agent network, and a check that there is a server to run it on."""
     if not reachable(host, port):
         _die(
             f"No neuro-san server at {host}:{port}.",
             "Start it in another terminal with:  uv run ns run",
         )
 
-    served = preset and [preset] or _networks(host, port)
-    if len(served) == 1:
-        console.print(f"\n[bold cyan]  •[/]  Network: [bold]{served[0]}[/]")
-        chosen = served[0]
-    else:
-        console.print("\n[bold cyan]  •[/]  [bold]Which network?[/]\n")
-        for number, name in enumerate(served, start=1):
-            console.print(f"     [cyan]{number}[/]  {name}")
-        answer = Prompt.ask(
-            "\n  Choose", choices=[str(n + 1) for n in range(len(served))], default="1",
-            show_choices=False,
+    try:
+        served = networks.fetch(host, port)
+    except (httpx.HTTPError, ValueError) as failure:
+        _die(
+            f"Something is listening at {host}:{port} but would not list its networks: "
+            f"{failure}",
+            "If that is not a neuro-san server, point at the right one with --ns-port.",
         )
-        chosen = served[int(answer) - 1]
 
+    if not served:
+        _die(
+            f"The neuro-san server at {host}:{port} serves no networks.",
+            "Check AGENT_MANIFEST_FILE in .env, and that the manifest enables one.",
+        )
+
+    chosen = _pick_network(served, preset, unattended)
     return ExperimentKind(
-        key=kind.key, title=f"{kind.title} / {chosen}", blurb=kind.blurb, module=kind.module,
-        requires=kind.requires, install_hint=kind.install_hint,
-        extra_args=("--network", chosen, "--host", host, "--port", str(port)),
+        key=kind.key, title=f"{kind.title} / {chosen.name}", blurb=kind.blurb,
+        module=kind.module, requires=kind.requires, install_hint=kind.install_hint,
+        extra_args=("--network", chosen.name, "--host", host, "--port", str(port)),
     )
 
 
-def _networks(host: str, port: int) -> list[str]:
-    """What the server says it serves, which beats reading the manifest off disk.
+def _pick_network(
+    served: list[networks.Network], preset: str, unattended: bool
+) -> networks.Network:
+    """One of the networks the server said it serves, and never one it did not.
 
-    The manifest is what the server was told to load; this is what it actually did.
+    A name is only accepted if the server offered it. Passing --network for a network that is
+    not being served used to be taken on trust, and the run then failed several turns in with
+    an error about an unknown agent, which reads as a server fault.
     """
-    try:
-        reply = httpx.get(f"http://{host}:{port}/api/v1/list", timeout=10)
-        reply.raise_for_status()
-        names = [str(entry.get("agent_name")) for entry in reply.json().get("agents") or []]
-    except (httpx.HTTPError, ValueError):
-        return [FALLBACK_NETWORK]
-    return sorted(name for name in names if name) or [FALLBACK_NETWORK]
+    # A precondition rather than a duplicate of the caller's check. Without it an empty list
+    # renders an empty menu and prompts for a choice among no options, which is a hang.
+    if not served:
+        _die("The neuro-san server serves no networks.", "")
+
+    if preset:
+        for network in served:
+            if network.name == preset:
+                return network
+        _die(
+            f"The server does not serve a network called {preset}.",
+            "It serves: " + ", ".join(network.name for network in served),
+        )
+
+    if len(served) == 1:
+        # Not a prompt. A menu of one is a keystroke that teaches nothing, and saying it is the
+        # only one served is the information the prompt would have carried.
+        console.print(
+            f"\n[bold cyan]  \u2022[/]  Network: [bold]{served[0].name}[/] "
+            "[dim](the only one this server serves)[/]"
+        )
+        return served[0]
+
+    if unattended:
+        _die(
+            f"The server serves {len(served)} networks and --yes forbids asking which.",
+            "Pass --network with one of: " + ", ".join(n.name for n in served),
+        )
+
+    console.print("\n[bold cyan]  \u2022[/]  [bold]Which network?[/]\n")
+    table = Table(box=None, padding=(0, 2), show_edge=False)
+    table.add_column(" ", justify="right", style="cyan")
+    table.add_column("Network", style="bold")
+    table.add_column("What it plays")
+    for number, network in enumerate(served, start=1):
+        table.add_row(str(number), network.name, network.summary)
+    console.print(table)
+
+    answer = Prompt.ask(
+        "\n  Choose", choices=[str(n + 1) for n in range(len(served))], default="1",
+        show_choices=False,
+    )
+    return served[int(answer) - 1]
 
 
 def _ask_token(api_url: str, session_id: str, preset: str, unattended: bool) -> str:

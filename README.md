@@ -90,6 +90,12 @@ It reads the open sessions from the running nttd server and offers the token tha
 issued, so nothing has to be carried between terminals. An approach whose dependency is
 missing says so in the menu rather than failing thirty seconds into a run.
 
+Choosing neuro-san adds one more question when there is a real choice to make: it asks the
+neuro-san server which networks it is serving and, if there is more than one, offers them
+with their descriptions. One network is stated rather than offered, because a menu of one is
+a keystroke that teaches nothing. A `--network` naming something the server does not serve is
+refused with the list of what it does.
+
 The same tool is `python -m runex` from a checkout, and `nttd runex` if you have nttd and
 these examples installed in one environment. `--kind`, `--session`, `--token` and `--yes`
 skip whichever questions you have already answered, which is what a script wants.
