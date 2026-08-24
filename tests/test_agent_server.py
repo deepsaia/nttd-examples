@@ -271,3 +271,16 @@ def test_a_group_that_has_already_gone_is_not_an_error() -> None:
             raise ProcessLookupError
 
     agent_server.AgentServer("localhost", 1, _Gone()).stop()
+
+
+def test_the_server_log_is_appended_rather_than_wiped(tmp_path: Path) -> None:
+    """It is read when a server has died and someone wants to know why.
+
+    Measured: opening it with "wb" meant a later run destroyed the log of the run being
+    diagnosed, which is the one moment the file exists for.
+    """
+    import inspect  # noqa: PLC0415
+
+    source = inspect.getsource(agent_server.start)
+    assert 'log.open("ab")' in source
+    assert 'log.open("wb")' not in source

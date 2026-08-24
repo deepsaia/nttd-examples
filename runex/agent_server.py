@@ -191,7 +191,13 @@ def start(host: str, port: int, log_path: Path | None = None) -> subprocess.Pope
     """
     log = (log_path or (project_root() / "logs" / "runex-neuro-san.log"))
     log.parent.mkdir(parents=True, exist_ok=True)
-    handle = log.open("wb")
+    # APPENDED, not truncated. This file is read when a server has died and someone wants to
+    # know why, and a second runex opening it with "wb" destroys exactly that: measured, a
+    # later run wiped the log of the run being diagnosed. Each start writes a banner so the
+    # runs stay legible.
+    handle = log.open("ab")
+    handle.write(f"\n===== ns run --server-only on {host}:{port} =====\n".encode())
+    handle.flush()
 
     env = dict(os.environ)
     env["NEURO_SAN_SERVER_HTTP_PORT"] = str(port)
