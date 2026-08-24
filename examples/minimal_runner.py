@@ -28,6 +28,10 @@ from typing import Any
 
 from agents.nttd_client import NttdClient
 
+# What the board shows in its system type column. Matches the key runex offers this runner
+# under, which tests/test_runex.py asserts, so the menu and the published row cannot disagree.
+SYSTEM_TYPE = "scripted"
+
 logger = logging.getLogger("minimal")
 
 
@@ -102,11 +106,18 @@ def main() -> int:
     # Declared, never measured. nttd runs no model, so it cannot see what you used or
     # what it cost. Saying nothing is honest and leaves the cost column blank on the
     # board; reporting zero claims the run was free, which for this runner is true.
-    client.report(model="none", total_cost_usd=0.0, spend_is_reported=True)
+    #
+    # nttd_framework is what the board shows as the system type. Declared HERE rather than
+    # passed in by whatever launched this, so a run started by hand says the same thing as
+    # one started by the launcher: the runner is the only thing that knows what it is.
+    client.report(
+        model="none", total_cost_usd=0.0, spend_is_reported=True,
+        nttd_framework=SYSTEM_TYPE, participant_type="scripted",
+    )
 
     result = play(client, max_steps=args.max_steps)
     logger.info("Final step %s, game date %s", result.get("step"), _game_date(result))
-    logger.info("Now package it: nttd submit --session %s", args.session)
+    logger.info("Now package it: nttd package --session %s", args.session)
     return 0
 
 

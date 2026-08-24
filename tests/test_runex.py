@@ -202,3 +202,39 @@ def test_a_server_serving_nothing_is_not_mistaken_for_serving_one() -> None:
     assert networks.fetch is not None
     with pytest.raises(typer.Exit):
         cli._pick_network([], "", False)
+
+
+# --- the system type a row is published under --------------------------------------------
+
+
+def test_every_written_runner_declares_its_system_type() -> None:
+    """nttd cannot see what played a session, so a row says whatever it was told.
+
+    Declared by the runner rather than injected by the launcher, because a run started by
+    hand must say the same thing as one started by `runex`. `nttd_framework` is the field,
+    and it reaches the board through result.parquet.
+    """
+    for kind in KINDS:
+        if not kind.written:
+            continue
+        source = open(kind.module.replace(".", os.sep) + ".py").read()
+        assert "nttd_framework" in source, f"{kind.module} publishes no system type"
+        assert "SYSTEM_TYPE" in source, f"{kind.module} does not name its system type"
+
+
+def test_the_declared_type_matches_the_key_the_menu_offers_it_under() -> None:
+    """Otherwise the menu says one thing and the published row says another.
+
+    A contestant picks "neuro-san" and a board row reading "scripted" is a lie nobody would
+    catch, because the two strings live in different repositories.
+    """
+    import importlib  # noqa: PLC0415
+
+    for kind in KINDS:
+        if not kind.written:
+            continue
+        module = importlib.import_module(kind.module)
+        assert module.SYSTEM_TYPE == kind.key, (
+            f"{kind.module} declares {module.SYSTEM_TYPE!r} "
+            f"but the menu offers it as {kind.key!r}"
+        )
