@@ -1,6 +1,6 @@
 """The agent networks a neuro-san server is actually serving.
 
-Asked of the server rather than read from registries/manifest.hocon on disk. The manifest is
+Asked of the server rather than read from the manifest on disk. That manifest is
 what the server was TOLD to load; this is what it did load. They differ whenever the manifest
 has been edited since `ns run` started, which during development is most of the time.
 

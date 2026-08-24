@@ -259,7 +259,7 @@ def _start_server(host: str, port: int) -> AgentServer:
         # what a shell with autocd needs, since a bare `runex` there is a cd into runex/.
         _die(
             f"No nttd-examples checkout at or above {root}, so there is nothing to serve.",
-            "The server reads registries/ and .env as relative paths, so it needs the "
+            "The server reads its registries and .env as relative paths, so it needs the "
             "repository. cd into a checkout, or point at a server you started yourself.",
         )
 

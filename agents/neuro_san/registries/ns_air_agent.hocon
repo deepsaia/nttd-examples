@@ -1,4 +1,4 @@
-include "registries/ns_common.hocon"
+include "agents/neuro_san/registries/ns_common.hocon"
 
 llm_config = ${ns_llm_config}
 allow = ${ns_allow}

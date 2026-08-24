@@ -148,7 +148,7 @@ def next_free_port(host: str, port: int, limit: int = PORT_SEARCH_LIMIT) -> int 
 # What marks the top of a checkout. The server reads AGENT_MANIFEST_FILE, AGENT_TOOL_PATH and
 # the API key from a project-root .env, all of them RELATIVE paths, so the working directory
 # it is started in is effectively its configuration.
-_PROJECT_MARKER = Path("registries") / "manifest.hocon"
+_PROJECT_MARKER = Path("agents/neuro_san/registries") / "manifest.hocon"
 
 
 def looks_like_a_project(root: Path) -> bool:
