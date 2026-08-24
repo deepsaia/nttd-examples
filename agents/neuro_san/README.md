@@ -103,7 +103,7 @@ start alone.
 
 `runex` finds the open sessions on the nttd server, offers the token that server issued, and
 asks which network when the server is serving more than one. It asks the server rather than
-reading `registries/manifest.hocon`, because the manifest is what the server was told to load
+reading the manifest on disk, because that is what the server was told to load
 and the answer wanted is what it did load: those differ whenever the manifest has been edited
 since the server started. By hand it is:
 

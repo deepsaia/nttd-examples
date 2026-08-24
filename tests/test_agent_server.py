@@ -228,8 +228,9 @@ def test_a_directory_that_is_not_a_checkout_is_recognised(tmp_path: Path) -> Non
     """So the launcher can say so rather than starting a server that serves nothing."""
     assert agent_server.looks_like_a_project(tmp_path) is False
 
-    (tmp_path / "registries").mkdir()
-    (tmp_path / "registries" / "manifest.hocon").write_text("{}")
+    marker = tmp_path / agent_server._PROJECT_MARKER
+    marker.parent.mkdir(parents=True)
+    marker.write_text("{}")
     assert agent_server.looks_like_a_project(tmp_path) is True
     assert agent_server.project_root(tmp_path) == tmp_path
 

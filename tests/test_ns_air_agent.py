@@ -17,7 +17,7 @@ import pytest
 pyhocon = pytest.importorskip("pyhocon")
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
-_REGISTRIES = _ROOT / "registries"
+_REGISTRIES = _ROOT / "agents" / "neuro_san" / "registries"
 _TOOLS = _ROOT / "agents" / "neuro_san" / "coded_tools"
 
 NETWORK = "ns_air_agent"
@@ -27,7 +27,7 @@ def _network(name: str = NETWORK) -> dict:
     """The registry as neuro-san composes it, with the shared base included."""
     base = (_REGISTRIES / "ns_common.hocon").read_text()
     body = (_REGISTRIES / f"{name}.hocon").read_text()
-    body = body.replace('include "registries/ns_common.hocon"', "")
+    body = body.replace('include "agents/neuro_san/registries/ns_common.hocon"', "")
     return pyhocon.ConfigFactory.parse_string(f"{base}\n{body}")
 
 

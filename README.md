@@ -144,7 +144,7 @@ uv run python -m examples.neuro_san_play --session <session> --token pt_... --ne
 |---|---|
 | `examples/minimal_runner.py` | A whole stepped run with no model and no framework. Start here. |
 | `examples/neuro_san_play.py` | The same run played by the neuro-san agent networks. |
-| `agents/neuro_san/` | Those networks: their registries live in `registries/`, their coded tools in `agents/neuro_san/coded_tools/`. |
+| `agents/neuro_san/` | Those networks, whole: `registries/` names them and `coded_tools/` is what they do. |
 | `agents/nttd_client.py` | A small framework-agnostic HTTP client. |
 | `agents/strategy/` | Hand-written strategy notes, one per transport mode. |
 | `runex/` | The interactive launcher. |
