@@ -24,7 +24,7 @@ uv sync --extra neuro-san            # + the neuro-san agent networks
 cp .env.example .env                 # then fill in ANTHROPIC_API_KEY
 ```
 
-`.env` is read by `ns run`, which starts the neuro-san server, and by `runex`. Everything
+`.env` is read by `runex` and by the agent server it starts. Everything
 in `.env.example` already has the value this repository expects except the API key, so
 the only line you have to write is that one.
 
@@ -41,8 +41,7 @@ uv run nttd server                                                              
 uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf    # terminal 2
 
 # --- here ---------------------------------------------------------------------------------
-uv run ns run                                                                   # terminal 3
-uv run runex                                                                    # terminal 4
+uv run runex                                                                    # terminal 3
 ```
 
 **1. `nttd server`** is the engine's HTTP API on `:8000`. Everything else talks to it, and it
@@ -55,14 +54,23 @@ and writes the result. The config decides the world and how long the run lasts, 
 checkout has all four tiers in both modes. It does **not** play. Attaching a runner is your
 half, which is steps 3 and 4.
 
-**3. `ns run`** is neuro-san-studio's launcher. It reads the project-root `.env`, serves the
-agent networks on `:8080`, and puts NSFlow on <http://localhost:4173> where every tool call
-and its arguments are visible while a turn runs. Skip this one if you are running the
-scripted example, which needs no model and no server.
+**3. `runex`** asks which approach, which session, which token and whether to start, then
+starts it. It reads what it can from the servers already running, so the usual answer is
+Enter.
 
-**4. `runex`** asks which approach, which session, which token and whether to start, then
-starts it. It reads the answers it can from the two servers already running, so the usual
-answer to all four is Enter.
+**It starts the agent server itself**, for an approach that needs one. That used to be a
+terminal of your own running `ns run`; now `runex` asks where the server is or should be,
+defaulting to `localhost:8088`, and starts one there if nothing answers. It shuts that server
+down when the run ends.
+
+A neuro-san server you started yourself is **found and used**, not duplicated, and is left
+running afterwards. That distinction is why it probes the port rather than just checking
+whether something is on it: a busy port might be a server to use or something else entirely,
+and those want opposite answers. If the port is busy with something that is not a neuro-san
+server, it says so and offers the next free one.
+
+Run `ns run` yourself if you want NSFlow on <http://localhost:4173>, where every tool call
+and its arguments are visible while a turn runs. `runex` will find it.
 
 ### Or drive the lifecycle yourself
 

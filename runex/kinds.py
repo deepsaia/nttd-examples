@@ -29,6 +29,15 @@ class ExperimentKind:
     # How to get that import, quoted back to the contestant verbatim.
     install_hint: str = ""
     extra_args: tuple[str, ...] = field(default_factory=tuple)
+    # Whether this approach plays through a SEPARATE agent server that runex should find or
+    # start before anything else. A flag on the kind rather than a name checked in the flow,
+    # so the launcher never asks "is this the neuro-san one".
+    #
+    # Only neuro-san sets it today, and `agent_server.start` runs `ns run` and nothing else.
+    # When a langgraph or RL entry needs a server of its own, what it takes to START one
+    # belongs here beside the kind; the finding, port arbitration and shutdown in
+    # agent_server.py are already about servers in general rather than about neuro-san.
+    agent_server: bool = False
 
     @property
     def written(self) -> bool:
@@ -61,6 +70,7 @@ KINDS: tuple[ExperimentKind, ...] = (
         module="examples.neuro_san_play",
         requires="neuro_san",
         install_hint="uv sync --extra neuro-san",
+        agent_server=True,
     ),
     ExperimentKind(
         key="scripted",
