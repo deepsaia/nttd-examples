@@ -30,34 +30,59 @@ the only line you have to write is that one.
 
 ---
 
-## You also need a world to play
+## A whole run, in four commands
 
-nttd stands one up. From an nttd checkout, in one command:
+Four terminals, two repositories. Steps 1 and 2 are the engine standing up a world; steps 3
+and 4 are you playing it.
 
 ```bash
+# --- in an nttd checkout ---------------------------------------------------------------
 uv run nttd server                                                              # terminal 1
-uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf   # terminal 2
+uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf    # terminal 2
+
+# --- here ---------------------------------------------------------------------------------
+uv run ns run                                                                   # terminal 3
+uv run runex                                                                    # terminal 4
 ```
 
-`benchmark` creates the session, draws the world, prints the session id and the
-participant token, then waits for the end condition and writes the result.
+**1. `nttd server`** is the engine's HTTP API on `:8000`. Everything else talks to it, and it
+runs no game by itself. Leave it up: one server serves any number of sessions.
 
-Or in four, when you want to change something in between, run two sessions against one
-server, or start a world now and attach to it later:
+**2. `nttd benchmark --config <conf>`** creates a session, draws its world, starts OpenTTD on
+it, prints the **session id** and the **participant token**, then waits for the end condition
+and writes the result. The config decides the world and how long the run lasts, and
+`t1_256_flat_1001_stepped.conf` is only an example: `ls config/benchmark/` in the nttd
+checkout has all four tiers in both modes. It does **not** play. Attaching a runner is your
+half, which is steps 3 and 4.
+
+**3. `ns run`** is neuro-san-studio's launcher. It reads the project-root `.env`, serves the
+agent networks on `:8080`, and puts NSFlow on <http://localhost:4173> where every tool call
+and its arguments are visible while a turn runs. Skip this one if you are running the
+scripted example, which needs no model and no server.
+
+**4. `runex`** asks which approach, which session, which token and whether to start, then
+starts it. It reads the answers it can from the two servers already running, so the usual
+answer to all four is Enter.
+
+### Or drive the lifecycle yourself
+
+`nttd benchmark` is these three rolled together. Use them separately when you want to change
+something in between, run two sessions against one server, or open a world now and attach to
+it much later:
 
 ```bash
-uv run nttd server                                                # terminal 1
 uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd session start -s <session> --agent-companies 1
-uv run nttd session attach <session>  # prints the participant token
+uv run nttd session attach <session>   # prints the participant token
 ```
 
-Either is fine. `--agent-companies 1` is the part to notice: without it the session has no
-contestant company, so no token is issued and nothing can play it.
+`--agent-companies 1` is the part to notice: without it the session has no contestant company,
+so no token is issued and nothing can play it. Unlike `benchmark`, nothing here waits for the
+end condition, so you end the run yourself with `nttd session stop -s <session>`.
 
 ---
 
-## Run an experiment
+## What step 4 looks like
 
 ```bash
 uv run runex
@@ -213,10 +238,47 @@ not void the run, since nothing happened, but the result reports `clean_run = fa
 
 ---
 
-## Submitting
+## Submitting it for scoring
 
-[docs/submitting.md](docs/submitting.md) has the whole path from opening a world to a
-verdict on the board, and says which of the three repositories owns which part.
+Three more commands, all from the nttd checkout, because the engine owns the record and the
+board reads what it wrote.
+
+```bash
+# 5. Package what happened. Writes into <session dir>/submission.
+uv run nttd submit -s 20260824-132212ist-sly-marsh
+
+# 6. Check it yourself before anyone else does.
+uv run nttd verify logs/sessions/20260824-132212ist-sly-marsh/submission
+
+# 7. File it as a pull request on the board's dataset.
+uv sync --extra publish                                  # once
+export HF_TOKEN=...                                      # your own token, write scope
+uv run nttd publish -s 20260824-132212ist-sly-marsh --entrant ada --id air-01
+```
+
+**5. `nttd submit`** collects the savegame, the action log, the snapshots and the result row
+into one bundle with digests over each artifact. Needs no token.
+
+**6. `nttd verify`** runs the same checks the board runs and predicts a verdict: it reloads
+the savegame, recomputes the score and replays the action log. It is **advisory**, because it
+ran on your machine from code you could have changed. Add `--regenerate` to rebuild the world
+from its declared seed and compare terrain, which takes a map generation plus a full tile scan
+and is the strongest check available before filing. The verdict that counts is computed by the
+board.
+
+**7. `nttd publish`** opens the pull request. The token is your own HuggingFace one, so nobody
+needs write access to the board, and the bundle lands at `submissions/<entrant>/<id>/`. Run it
+with `--dry-run` first to see exactly what would be filed and where. A bundle that fails
+verification can still be filed, deliberately: a self-reported score is published as one
+rather than hidden.
+
+Then the board takes over. Its ingest answers the cheap questions on the pull request, and a
+separate verification step reloads the savegame on infrastructure you do not control and
+decides the verdict. It ranks on `performance_rating`, OpenTTD's own rating out of 1000, with
+`total_cargo` as the tiebreak.
+
+[docs/submitting.md](docs/submitting.md) has the whole path in one place, and says which of
+the three repositories owns which part.
 
 ---
 
