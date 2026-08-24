@@ -19,11 +19,31 @@ language is on equal footing.
 ```bash
 git clone git@github.com:deepsaia/nttd-examples.git
 cd nttd-examples
-uv sync                              # requests, httpx, websockets
+uv sync                              # requests, httpx, websockets, and the runex launcher
 uv sync --extra neuro-san            # + the neuro-san agent networks
+cp .env.example .env                 # then fill in ANTHROPIC_API_KEY
 ```
 
-You also need an nttd server and a session to attach to. From an nttd checkout:
+`.env` is read by `ns run`, which starts the neuro-san server, and by `runex`. Everything
+in `.env.example` already has the value this repository expects except the API key, so
+the only line you have to write is that one.
+
+---
+
+## You also need a world to play
+
+nttd stands one up. From an nttd checkout, in one command:
+
+```bash
+uv run nttd server                                                              # terminal 1
+uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf   # terminal 2
+```
+
+`benchmark` creates the session, draws the world, prints the session id and the
+participant token, then waits for the end condition and writes the result.
+
+Or in four, when you want to change something in between, run two sessions against one
+server, or start a world now and attach to it later:
 
 ```bash
 uv run nttd server                                                # terminal 1
@@ -32,21 +52,79 @@ uv run nttd session start -s <session> --agent-companies 1
 uv run nttd session attach <session>  # prints the participant token
 ```
 
-See [docs/submitting.md](docs/submitting.md) for the whole path from opening a world to
-getting a verdict on the board, and for which of the three repositories owns which part.
+Either is fine. `--agent-companies 1` is the part to notice: without it the session has no
+contestant company, so no token is issued and nothing can play it.
 
 ---
 
-## Start here
+## Run an experiment
 
 ```bash
-python examples/minimal_runner.py --session <session> --token pt_... --steps 3
+uv run runex
 ```
 
-`examples/minimal_runner.py` is the whole contract in one file: observe, decide, submit,
-report. No LLM and no framework, so it runs without an API key. Its `decide()` is
-deliberately trivial; that function is your entry and everything around it is plumbing
-that does not change.
+Four questions in order, and the usual answer to all four is Enter:
+
+```
+  1  How will it play?
+
+       Approach                  What decides
+  1    neuro-san                 A multi-agent network: a strategist that reads the
+                                 position and calls workers which survey, build, buy
+                                 and repair. Needs a neuro-san server running.
+  2    scripted                  No model and no framework. A fixed policy playing the
+                                 same stepped loop.
+       evolution strategies      not written yet
+       reinforcement learning    not written yet
+
+  2  Which session?
+
+       Session                            Scenario                    Mode      Days   State
+  1    20260824-095217ist-perky-rocket    t1-256-flat-1001-stepped    stepped    366   running  scored
+
+  3  Participant token
+     nttd issued pt_ae9a99a44499418a8632856663bd7c65 for this session
+```
+
+It reads the open sessions from the running nttd server and offers the token that server
+issued, so nothing has to be carried between terminals. An approach whose dependency is
+missing says so in the menu rather than failing thirty seconds into a run.
+
+The same tool is `python -m runex` from a checkout, and `nttd runex` if you have nttd and
+these examples installed in one environment. `--kind`, `--session`, `--token` and `--yes`
+skip whichever questions you have already answered, which is what a script wants.
+
+Nothing depends on it. Every run it starts can be started by hand:
+
+```bash
+uv run python -m examples.minimal_runner --session <session> --token pt_...
+uv run python -m examples.neuro_san_play --session <session> --token pt_... --network ns_air_agent
+```
+
+---
+
+## What is here
+
+| Path | |
+|---|---|
+| `examples/minimal_runner.py` | A whole stepped run with no model and no framework. Start here. |
+| `examples/neuro_san_play.py` | The same run played by the neuro-san agent networks. |
+| `agents/neuro_san/` | Those networks: their registries live in `registries/`, their coded tools in `agents/neuro_san/coded_tools/`. |
+| `agents/nttd_client.py` | A small framework-agnostic HTTP client. |
+| `agents/strategy/` | Hand-written strategy notes, one per transport mode. |
+| `runex/` | The interactive launcher. |
+
+One example per idea rather than one per SDK. There were LangChain, OpenAI and LangGraph
+runners too, all demonstrating the same loop through a different client, and four copies of
+one idea drift in four directions.
+
+---
+
+## Start here: `examples/minimal_runner.py`
+
+The whole contract in one file: observe, decide, submit, report. No LLM and no framework,
+so it runs without an API key. Its `decide()` is deliberately trivial; that function is
+your entry and everything around it is plumbing that does not change.
 
 It is also the reference for the four submission outcomes, which is the part contestants
 most often get wrong:
@@ -76,51 +154,26 @@ server's view catches up. With that in place it submits once, which the session'
 
 ---
 
-## What is here
+## The neuro-san networks
 
-| Path | Status |
-|---|---|
-| `examples/minimal_runner.py` | **Current.** Verified against a live session. |
-| `examples/neuro_san_mas/` | Coded tools use `state/gs/query`, which is current. The surrounding loop predates participant tokens. |
-| `examples/langchain_nttd_agent.py` | Predates participant tokens, see below |
+One network per transport mode, because the four are different games: air decides on town
+population against airport coverage, road on many short pairs because one saturates, water
+on which docks share a body of water at all, and rail on platform axis, depot junction and
+rail type. A single network with a mode switch would be four strategies averaged into none.
 
-| `examples/openai_nttd_agent.py` | Predates participant tokens |
-| `examples/simple_bus_agent.py` | Predates participant tokens |
-| `examples/agent_client.py` | Predates participant tokens |
-| `examples/manual_bus_test.py` | A hand-driven route build, useful for reading |
-| `agents/` | A small framework-agnostic client and a scripted policy |
+Air is the one that is written. `agents/neuro_san/DESIGN.md` is the design and the evidence
+behind it; every rule in it cost a run to learn.
 
-### What "predates participant tokens" means
-
-These runners were written when nttd ran the agent loop itself. They still register
-successfully:
-
-```
-POST /sessions/{id}/agents/connect            ->  200
-GET  /sessions/{id}/state/compact?company_id=0 -> 200
+```bash
+uv sync --extra neuro-san
+uv run ns run                        # terminal 3, the neuro-san server and its web UI
+uv run runex --kind neuro-san
 ```
 
-and then fail to act:
-
-```
-POST /sessions/{id}/actions/submit             ->  401
-{"detail":"A valid participant token is required. Pass it as X-Participant-Token ..."}
-```
-
-A submission now has to carry the participant token that `nttd session attach` prints.
-The token answers "which company is this action for" in a form you cannot get wrong: the
-company is derived from the token server-side and overwrites whatever is in the request
-body, so `company_id` in the payload is ignored.
-
-Porting one is small. Add the header, drop the registration call, and read from
-`state/full` rather than `state/compact`:
-
-```python
-H = {"X-Participant-Token": token}
-requests.post(f"{P}/actions/submit", headers=H, json={...})
-```
-
-`minimal_runner.py` shows the finished shape.
+`ns run` reads `.env` from the project root, which is why the API key belongs there rather
+than in a shell. It also serves NSFlow on <http://localhost:4173>, where every tool call
+and its arguments are visible while a turn runs: the quickest way to see why a network
+chose what it chose.
 
 ---
 
@@ -154,15 +207,23 @@ not void the run, since nothing happened, but the result reports `clean_run = fa
 
 ---
 
+## Submitting
+
+[docs/submitting.md](docs/submitting.md) has the whole path from opening a world to a
+verdict on the board, and says which of the three repositories owns which part.
+
+---
+
 ## Tests
 
 ```bash
-uv run --extra dev --extra neuro-san pytest -q     # 134 tests
-uv run --extra dev ruff check examples/ agents/ tests/
+uv run --extra dev --extra neuro-san pytest -q
+uv run --extra dev ruff check agents/ examples/ runex/ tests/
 ```
 
 The `neuro-san` extra is needed for the coded-tool tests, because those tools import it.
-It pulls in about 96 packages, which is why it is not part of `dev`.
+It pulls in about 96 packages, which is why it is not part of `dev`. Without it those
+modules are skipped rather than erroring, so a plain `uv sync` still gives a green run.
 
 ---
 

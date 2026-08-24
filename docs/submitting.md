@@ -19,12 +19,18 @@ an entry written in another language stands on equal footing.
 ```bash
 # 1. Start the engine and open a world.               (from an nttd checkout)
 uv run nttd server
+uv run nttd benchmark --config config/benchmark/t1_256_flat_1001_stepped.conf
+
+#    or drive the lifecycle yourself, which is the same thing in four commands:
 uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
 uv run nttd session start -s <session> --agent-companies 1
 uv run nttd session attach <session>      # prints the participant token and the routes
 
 # 2. Play it.                                          (from this repository)
-uv run python -m examples.<runner> --session <session> --token <token>
+uv run runex                              # asks which approach, which session, which token
+
+#    or by hand, which is what runex ends up running:
+uv run python -m examples.minimal_runner --session <session> --token <token>
 
 # 3. Package what happened.                            (from an nttd checkout)
 uv run nttd submit -s <session>           # writes <session dir>/submission
