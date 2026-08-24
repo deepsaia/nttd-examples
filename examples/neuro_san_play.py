@@ -64,6 +64,77 @@ def _status(session: str) -> dict:
         return {"ended": True}
 
 
+# The flat keys neuro-san puts beside the per-model breakdown in its token accounting: the
+# whole network's totals for a request. Skipped when walking it, because the per-model entries
+# below them already carry the same numbers split up, and counting both doubles everything.
+_AGGREGATE_KEYS = frozenset({
+    "total_tokens", "prompt_tokens", "completion_tokens", "successful_requests",
+    "empty_responses", "total_cost", "time_taken_in_seconds", "caveats",
+})
+
+
+def _spend_from(accounting: dict) -> list[dict]:
+    """neuro-san's token accounting for one turn, as nttd's per-model spend.
+
+    The shape is {provider: {model: {prompt_tokens, completion_tokens, total_cost, ...}}},
+    with the network's totals as flat keys alongside. nttd wants one entry per model, and its
+    free-form `role` is where the provider goes: a front man on opus and workers on sonnet is
+    exactly the split it keeps spend per model to show.
+
+    **The cost is omitted when neuro-san reports zero.** It prices models from its own table
+    and falls back to zero with only a log warning when a model is not in it, so a zero is far
+    more likely to mean "no price for this model" than "this was free". nttd tells those apart:
+    an absent cost leaves the board's cost column blank, while a zero claims the run cost
+    nothing. Passing through a fallback zero would publish that claim on a run that spent real
+    money.
+    """
+    spend: list[dict] = []
+    for provider, models in (accounting or {}).items():
+        if provider in _AGGREGATE_KEYS or not isinstance(models, dict):
+            continue
+        for model, stats in models.items():
+            if not isinstance(stats, dict):
+                continue
+            cost = float(stats.get("total_cost") or 0.0)
+            entry = {
+                "model": str(model),
+                "role": str(provider),
+                "prompt_tokens": int(stats.get("prompt_tokens") or 0),
+                "completion_tokens": int(stats.get("completion_tokens") or 0),
+            }
+            if cost > 0:
+                entry["total_cost_usd"] = cost
+            spend.append(entry)
+    return spend
+
+
+def _report_spend(session: str, token: str, accounting: dict) -> None:
+    """Send one turn's usage. nttd ADDS what it is told, so this reports per turn.
+
+    Per turn is also the honest unit. Each turn is its own request carrying `chat_context`
+    forward, so the history is re-sent and re-billed every time, and the totals only add up if
+    every turn is counted. neuro-san resets its accounting per request, so what arrives here
+    is this turn alone rather than a running total.
+
+    Estimates, and declared as such by nttd, which marks the whole group reported rather than
+    observed. neuro-san's own caveat: "Token counts are approximate and estimated using
+    tiktoken."
+    """
+    spend = _spend_from(accounting)
+    if not spend:
+        return
+    try:
+        reply = httpx.post(
+            f"{API_URL}/v1/participant/sessions/{session}/report",
+            headers={"X-Participant-Token": token},
+            json={"models": spend},
+            timeout=30,
+        )
+        reply.raise_for_status()
+    except httpx.HTTPError as failure:
+        logger.warning("Could not report this turn's spend: %r", failure)
+
+
 def _declare(session: str, token: str, network: str) -> None:
     """Tell nttd what is playing, since it cannot see it.
 
@@ -118,6 +189,7 @@ def play(session: str, token: str, network: str, host: str, port: int, turns: in
     for turn in range(1, turns + 1):
         state["user_input"] = TURN
         state = processor.process_once(state)
+        _report_spend(session, token, state.get("token_accounting") or {})
 
         said = (state.get("last_chat_response") or "").strip()
         now = _status(session)
