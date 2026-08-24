@@ -93,15 +93,19 @@ duplicate the engine and hand the player the answer sheet.
 uv sync --extra neuro-san
 cp .env.example .env                 # fill in ANTHROPIC_API_KEY
 
-uv run ns run                        # terminal A: the networks on :8080, nsflow on :4173
-uv run runex --kind neuro-san        # terminal B: pick a session and play it
+uv run runex --kind neuro-san        # starts the agent server, then plays a session
 ```
+
+`runex` starts the neuro-san server itself, on `localhost:8088` unless you say otherwise, and
+stops it when the run ends. Start one yourself with `uv run ns run` if you want NSFlow: it
+finds a running server and uses it rather than starting a second, and leaves one it did not
+start alone.
 
 `runex` finds the open sessions on the nttd server, offers the token that server issued, and
 asks which network when the server is serving more than one. It asks the server rather than
 reading `registries/manifest.hocon`, because the manifest is what the server was told to load
 and the answer wanted is what it did load: those differ whenever the manifest has been edited
-since `ns run` started. By hand it is:
+since the server started. By hand it is:
 
 ```bash
 uv run python -m examples.neuro_san_play \
@@ -118,9 +122,11 @@ every 30 game days, a number lifted from how the game was played by hand. Judgin
 and how long to wait is part of what the benchmark measures, so it belongs to the agent: ten
 days to see whether a vehicle left its depot, ninety to see whether a route pays.
 
-`ns run` also serves nsflow at <http://localhost:4173>, which draws the network and shows
-every tool call and its arguments as they happen. That is the thing to watch while a run is
-going, alongside `nttd monitor`.
+`ns run` serves nsflow at <http://localhost:4173>, which draws the network and shows every
+tool call and its arguments as they happen. That is the thing to watch while a run is going,
+alongside `nttd monitor`, and it is the reason to start a server by hand rather than let
+`runex` do it: `runex` starts the server alone, because NSFlow would bind a second port to
+find free.
 
 `ns` is neuro-san-studio's launcher: it loads the project-root `.env` before starting, so the
 manifest path, the tool path and the model key live in one file rather than being exported

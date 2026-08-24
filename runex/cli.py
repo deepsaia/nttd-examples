@@ -24,9 +24,10 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
 
-from runex import networks, sessions
+from runex import agent_server, networks, sessions
+from runex.agent_server import AgentServer
 from runex.kinds import KINDS, ExperimentKind, by_key
-from runex.launcher import Launcher, reachable
+from runex.launcher import Launcher
 
 console = Console()
 
@@ -37,8 +38,8 @@ app = typer.Typer(
 )
 
 DEFAULT_API_URL = "http://127.0.0.1:8000"
-DEFAULT_NS_HOST = "localhost"
-DEFAULT_NS_PORT = 8080
+DEFAULT_NS_HOST = agent_server.DEFAULT_HOST
+DEFAULT_NS_PORT = agent_server.DEFAULT_PORT
 
 
 @app.command()
@@ -59,19 +60,32 @@ def main(
     _banner(api_url)
 
     chosen = _choose_kind(kind)
-    picked = _choose_session(api_url, session)
-    if chosen.key == "neuro-san":
-        chosen = _with_network(chosen, network, ns_host, ns_port, yes)
-    secret = _ask_token(api_url, picked.session_id, token, yes)
 
-    launcher = Launcher(api_url)
-    _summarise(chosen, picked, launcher.command(chosen, picked.session_id))
-    if not yes and not Confirm.ask("\n  Start the experiment", default=True):
-        console.print("[dim]  Nothing started.[/]")
-        raise typer.Exit(code=0)
+    # The agent server comes BEFORE the session, and not only for tidiness. Standing one up
+    # can mean starting a process and waiting a minute for it to load every network, and a
+    # contestant who has already picked a live scored session should not then be asked to
+    # wait. Whatever can fail should fail before anything is attached to a running game.
+    server: AgentServer | None = None
+    try:
+        if chosen.agent_server:
+            server = _agent_server(ns_host, ns_port, yes)
+            chosen = _with_network(chosen, network, server, yes)
 
-    console.rule(f"[bold]{chosen.title} playing {picked.session_id}")
-    raise typer.Exit(code=launcher.run(chosen, picked.session_id, secret))
+        picked = _choose_session(api_url, session)
+        secret = _ask_token(api_url, picked.session_id, token, yes)
+
+        launcher = Launcher(api_url)
+        _summarise(chosen, picked, launcher.command(chosen, picked.session_id))
+        if not yes and not Confirm.ask("\n  Start the experiment", default=True):
+            console.print("[dim]  Nothing started.[/]")
+            raise typer.Exit(code=0)
+
+        console.rule(f"[bold]{chosen.title} playing {picked.session_id}")
+        raise typer.Exit(code=launcher.run(chosen, picked.session_id, secret))
+    finally:
+        # Whatever happened: the run ended, the contestant declined, something refused, or
+        # they pressed Ctrl-C. A server this launcher started is its to clean up.
+        _stop_server(server)
 
 
 def _banner(api_url: str) -> None:
@@ -149,7 +163,7 @@ def _choose_session(api_url: str, preset: str) -> sessions.Session:
             "    uv run nttd session start -s <session> --agent-companies 1",
         )
 
-    console.print("\n[bold cyan]  2[/]  [bold]Which session?[/]\n")
+    console.print("\n[bold cyan]  3[/]  [bold]Which session?[/]\n")
     table = Table(box=None, padding=(0, 2), show_edge=False)
     table.add_column(" ", justify="right", style="cyan")
     table.add_column("Session")
@@ -187,28 +201,140 @@ def _state(found: sessions.Session) -> str:
     return f"{live}  [magenta]scored[/]" if found.scored else f"{live}  [dim]practice[/]"
 
 
-def _with_network(
-    kind: ExperimentKind, preset: str, host: str, port: int, unattended: bool
-) -> ExperimentKind:
-    """Which agent network, and a check that there is a server to run it on."""
-    if not reachable(host, port):
+def _agent_server(host: str, port: int, unattended: bool) -> AgentServer:
+    """Find a neuro-san server, or start one.
+
+    This used to refuse: "No neuro-san server at localhost:8080, start it in another
+    terminal". True, and a poor answer from a launcher whose whole job is to spare a
+    contestant that terminal.
+    """
+    console.print("\n[bold cyan]  2[/]  [bold]Agent server[/]")
+
+    if not unattended:
+        answer = Prompt.ask("\n  Where is it, or where should it run", default=f"{host}:{port}")
+        host, port = _split_address(answer, host, port)
+
+    # Asked before deciding, because a busy port is two situations wanting opposite answers.
+    # A neuro-san server already there should be USED; anything else there means ours needs
+    # somewhere to go. Only a server answers with its networks.
+    served = agent_server.looks_like_neuro_san(host, port)
+    if served:
+        console.print(
+            f"     [green]already running[/] at {host}:{port}, "
+            f"serving {len(served)} network(s). [dim]Left running afterwards.[/]"
+        )
+        return AgentServer(host, port)
+
+    if agent_server.port_is_taken(host, port):
+        console.print(
+            f"     [yellow]{host}:{port} is busy, and what is there is not a neuro-san "
+            "server.[/]"
+        )
+        free = agent_server.next_free_port(host, port + 1)
+        if free is None:
+            _die(
+                f"Nothing is free between {port + 1} and "
+                f"{port + agent_server.PORT_SEARCH_LIMIT}.",
+                "Give a port yourself with --ns-port.",
+            )
+        if not unattended and not Confirm.ask(f"  Start one on {free} instead", default=True):
+            _die("No agent server, so there is nothing to play with.", "")
+        # Said out loud, and in the unattended path too. A launcher that quietly moved the
+        # server to a port nobody named would leave a contestant looking for it on the one
+        # they typed, and NSFlow, a browser tab and any second runex all pointed at the
+        # wrong place.
+        console.print(f"     [yellow]moving to {host}:{free}[/], the next port that is free")
+        port = free
+
+    return _start_server(host, port)
+
+
+def _start_server(host: str, port: int) -> AgentServer:
+    """Start one and wait for it to serve, saying what went wrong when it does not."""
+    root = agent_server.project_root()
+    if not agent_server.looks_like_a_project(root):
+        # Reached only when neither the walk up from here nor the package's own location
+        # finds a checkout, which means runex is installed and being run from somewhere
+        # unrelated. Being in a SUBDIRECTORY is handled: project_root walks up, which is
+        # what a shell with autocd needs, since a bare `runex` there is a cd into runex/.
         _die(
-            f"No neuro-san server at {host}:{port}.",
-            "Start it in another terminal with:  uv run ns run",
+            f"No nttd-examples checkout at or above {root}, so there is nothing to serve.",
+            "The server reads registries/ and .env as relative paths, so it needs the "
+            "repository. cd into a checkout, or point at a server you started yourself.",
         )
 
+    console.print(f"     starting a neuro-san server on {host}:{port}[dim] ...[/]")
     try:
-        served = networks.fetch(host, port)
+        process = agent_server.start(host, port)
+    except FileNotFoundError:
+        _die(
+            "`ns` is not installed, so no server can be started.",
+            "uv sync --extra neuro-san",
+        )
+
+    with console.status("     loading agent networks", spinner="dots"):
+        served = agent_server.wait_until_serving(host, port, process)
+
+    if not served:
+        AgentServer(host, port, process).stop()
+        _die(
+            f"The neuro-san server did not come up on {host}:{port}.",
+            "What it said is in logs/runex-neuro-san.log. A missing ANTHROPIC_API_KEY in "
+            ".env is the usual reason.",
+        )
+
+    console.print(f"     [green]serving {len(served)} network(s)[/]")
+    return AgentServer(host, port, process)
+
+
+def _split_address(answer: str, host: str, port: int) -> tuple[str, int]:
+    """"localhost:8088", "8088" or "localhost", whichever a contestant typed."""
+    text = answer.strip()
+    if not text:
+        return host, port
+    if ":" in text:
+        left, _, right = text.rpartition(":")
+        return (left or host), _as_port(right, port)
+    if text.isdigit():
+        return host, _as_port(text, port)
+    return text, port
+
+
+def _as_port(text: str, fallback: int) -> int:
+    try:
+        value = int(text)
+    except ValueError:
+        console.print(f"     [yellow]{text!r} is not a port, using {fallback}.[/]")
+        return fallback
+    if not 1 <= value <= 65535:
+        console.print(f"     [yellow]{value} is not a port, using {fallback}.[/]")
+        return fallback
+    return value
+
+
+def _stop_server(server: AgentServer | None) -> None:
+    """Stop a server this launcher started. One it merely found is left alone."""
+    if server is None or not server.ours:
+        return
+    console.print(f"\n[dim]  Stopping the neuro-san server on {server.host}:{server.port}[/]")
+    server.stop()
+
+
+def _with_network(
+    kind: ExperimentKind, preset: str, server: AgentServer, unattended: bool
+) -> ExperimentKind:
+    """Which agent network, from the ones the server says it is serving."""
+    try:
+        served = networks.fetch(server.host, server.port)
     except (httpx.HTTPError, ValueError) as failure:
         _die(
-            f"Something is listening at {host}:{port} but would not list its networks: "
-            f"{failure}",
+            f"{server.host}:{server.port} would not list its networks: {failure}",
             "If that is not a neuro-san server, point at the right one with --ns-port.",
         )
 
     if not served:
         _die(
-            f"The neuro-san server at {host}:{port} serves no networks.",
+            f"The neuro-san server at {server.host}:{server.port} serves no networks.",
             "Check AGENT_MANIFEST_FILE in .env, and that the manifest enables one.",
         )
 
@@ -216,7 +342,9 @@ def _with_network(
     return ExperimentKind(
         key=kind.key, title=f"{kind.title} / {chosen.name}", blurb=kind.blurb,
         module=kind.module, requires=kind.requires, install_hint=kind.install_hint,
-        extra_args=("--network", chosen.name, "--host", host, "--port", str(port)),
+        agent_server=kind.agent_server,
+        extra_args=("--network", chosen.name,
+                    "--host", server.host, "--port", str(server.port)),
     )
 
 
@@ -284,7 +412,7 @@ def _ask_token(api_url: str, session_id: str, preset: str, unattended: bool) -> 
     if preset:
         return preset
 
-    console.print("\n[bold cyan]  3[/]  [bold]Participant token[/]")
+    console.print("\n[bold cyan]  4[/]  [bold]Participant token[/]")
     known = sessions.token_for(api_url, session_id)
     if known:
         console.print(f"     [dim]nttd issued[/] [green]{known}[/] [dim]for this session[/]")
