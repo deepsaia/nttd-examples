@@ -44,8 +44,8 @@ try:
     # Loaded as part of this repository, which is how the tests import it.
     from agents.neuro_san.coded_tools.ns import session
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
-    from agents.neuro_san.coded_tools.ns_air import air_keys as air
-    from agents.neuro_san.coded_tools.ns_air.choose_aircraft import AIRCRAFT
+    from agents.neuro_san.coded_tools.ns_air_agent import air_keys as air
+    from agents.neuro_san.coded_tools.ns_air_agent.choose_aircraft import AIRCRAFT
 except ImportError:
     # Loaded by neuro-san from AGENT_TOOL_PATH, where ns and ns_air are siblings and the
     # package above them is not on the path. Both spellings are needed because
@@ -54,8 +54,8 @@ except ImportError:
     from ns import session
     from ns.gateway import NttdGateway
 
-    from ns_air import air_keys as air
-    from ns_air.choose_aircraft import AIRCRAFT
+    from ns_air_agent import air_keys as air
+    from ns_air_agent.choose_aircraft import AIRCRAFT
 
 # There is no ramp period here, and there deliberately is not one.
 #

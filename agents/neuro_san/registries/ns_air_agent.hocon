@@ -319,7 +319,7 @@ rating points. Surveyed once per session, because towns do not move.
                 properties = { limit = { type = "integer", description = "How many sites to return" } }
             }
         }
-        class = "ns_air.survey_airport_sites.SurveyAirportSites"
+        class = "ns_air_agent.survey_airport_sites.SurveyAirportSites"
     }
     {
         name = "rank_corridors"
@@ -334,7 +334,7 @@ decides what may fly.
                 properties = { limit = { type = "integer", description = "How many corridors to return" } }
             }
         }
-        class = "ns_air.rank_corridors.RankCorridors"
+        class = "ns_air_agent.rank_corridors.RankCorridors"
     }
     {
         name = "plan_build_corridor"
@@ -346,7 +346,7 @@ decides what may fly.
                 required = ["corridor_id"]
             }
         }
-        class = "ns_air.plan_build_corridor.PlanBuildCorridor"
+        class = "ns_air_agent.plan_build_corridor.PlanBuildCorridor"
     }
     {
         name = "confirm_airports"
@@ -354,7 +354,7 @@ decides what may fly.
 Run after committing a build. Resolves each hangar tile, records the route, and checks the airport
 attached to the town that was intended rather than a neighbour.
 """ }
-        class = "ns_air.confirm_airports.ConfirmAirports"
+        class = "ns_air_agent.confirm_airports.ConfirmAirports"
     }
 
     # ---- air: fleet ------------------------------------------------------------------------
@@ -370,7 +370,7 @@ Never name an engine yourself; this reads the real list.
                 properties = { corridor_id = { type = "string", description = "Which route, or omit for the newest" } }
             }
         }
-        class = "ns_air.choose_aircraft.ChooseAircraft"
+        class = "ns_air_agent.choose_aircraft.ChooseAircraft"
     }
     {
         name = "plan_buy_aircraft"
@@ -388,7 +388,7 @@ hangar itself, and refuses to buy when too few days remain for a vehicle to pay 
                 required = ["count"]
             }
         }
-        class = "ns_air.plan_buy_aircraft.PlanBuyAircraft"
+        class = "ns_air_agent.plan_buy_aircraft.PlanBuyAircraft"
     }
     {
         name = "plan_dispatch"
@@ -402,7 +402,7 @@ is parked at so none is sent to the wrong corridor. A whole fleet is dispatched 
                 properties = { town = { type = "string", description = "Limit to one route, or omit for all" } }
             }
         }
-        class = "ns_air.plan_dispatch.PlanDispatch"
+        class = "ns_air_agent.plan_dispatch.PlanDispatch"
     }
     {
         name = "plan_clone_aircraft"
@@ -420,7 +420,7 @@ clone arrives stopped, so a start is staged with it.
                 required = ["count"]
             }
         }
-        class = "ns_air.plan_clone_aircraft.PlanCloneAircraft"
+        class = "ns_air_agent.plan_clone_aircraft.PlanCloneAircraft"
     }
 
     # ---- air: care -------------------------------------------------------------------------
@@ -430,7 +430,7 @@ clone arrives stopped, so a start is staged with it.
 A verdict per aeroplane: healthy, watch, or stuck, with the reason. Judges on how long a vehicle
 has been in its state, not on the state itself, because loading at a gate is normal.
 """ }
-        class = "ns_air.air_health_check.AirHealthCheck"
+        class = "ns_air_agent.air_health_check.AirHealthCheck"
     }
     {
         name = "plan_repoint"
@@ -444,7 +444,7 @@ actually flies, then starts it.
                 properties = { vehicle_id = { type = "integer", description = "From air_health_check, or omit for all stuck" } }
             }
         }
-        class = "ns_air.plan_repoint.PlanRepoint"
+        class = "ns_air_agent.plan_repoint.PlanRepoint"
     }
     {
         name = "plan_retire"
@@ -458,6 +458,6 @@ cannot be done in one step. Recovering the capital beats paying to keep somethin
                 properties = { vehicle_id = { type = "integer", description = "From air_health_check, or omit for all hopeless" } }
             }
         }
-        class = "ns_air.plan_retire.PlanRetire"
+        class = "ns_air_agent.plan_retire.PlanRetire"
     }
 ]

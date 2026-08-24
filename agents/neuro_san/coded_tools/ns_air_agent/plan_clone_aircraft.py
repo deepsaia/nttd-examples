@@ -37,18 +37,18 @@ try:
         stations_called_at,
     )
     from agents.neuro_san.coded_tools.ns.plan import Plan
-    from agents.neuro_san.coded_tools.ns_air.choose_aircraft import (
+    from agents.neuro_san.coded_tools.ns_air_agent.choose_aircraft import (
         AIRCRAFT,
         known_routes,
         name_of,
         route_for,
     )
-    from agents.neuro_san.coded_tools.ns_air.plan_buy_aircraft import (
+    from agents.neuro_san.coded_tools.ns_air_agent.plan_buy_aircraft import (
         MOST_AT_ONCE,
         hangar_for,
         refuse_if_late,
     )
-    from agents.neuro_san.coded_tools.ns_air.plan_dispatch import parked_with_orders
+    from agents.neuro_san.coded_tools.ns_air_agent.plan_dispatch import parked_with_orders
 except ImportError:
     # Loaded by neuro-san from AGENT_TOOL_PATH, where ns and ns_air are siblings and the
     # package above them is not on the path. Both spellings are needed because
@@ -65,9 +65,9 @@ except ImportError:
     )
     from ns.plan import Plan
 
-    from ns_air.choose_aircraft import AIRCRAFT, known_routes, name_of, route_for
-    from ns_air.plan_buy_aircraft import MOST_AT_ONCE, hangar_for, refuse_if_late
-    from ns_air.plan_dispatch import parked_with_orders
+    from ns_air_agent.choose_aircraft import AIRCRAFT, known_routes, name_of, route_for
+    from ns_air_agent.plan_buy_aircraft import MOST_AT_ONCE, hangar_for, refuse_if_late
+    from ns_air_agent.plan_dispatch import parked_with_orders
 
 # Shared rather than copied: two aircraft with one order list change together afterwards, so a
 # corridor repointed once is repointed for every aircraft on it.

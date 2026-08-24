@@ -183,7 +183,7 @@ def test_every_tool_module_loads_as_a_flat_sibling() -> None:
     """
     sys.path.insert(0, str(_TOOLS))
     try:
-        for package in ("ns", "ns_air"):
+        for package in ("ns", "ns_air_agent"):
             for path in sorted((_TOOLS / package).glob("*.py")):
                 if path.stem != "__init__":
                     importlib.import_module(f"{package}.{path.stem}")
@@ -256,7 +256,7 @@ def test_air_is_its_own_network_with_its_own_tools() -> None:
     saturates; water on which docks share a body of water; rail on platform axis, depot
     junction and rail type. Only the plumbing under ns/ is common.
     """
-    air_only = [entry["class"] for entry in _coded() if entry["class"].startswith("ns_air.")]
+    air_only = [entry["class"] for entry in _coded() if entry["class"].startswith("ns_air_agent.")]
     shared = [entry["class"] for entry in _coded() if entry["class"].startswith("ns.")]
     assert len(air_only) >= 8, "air should carry its own siting, fleet and care tools"
     assert len(shared) >= 8, "the plumbing should be shared with the other three modes"
@@ -284,3 +284,29 @@ def test_the_network_does_not_compute_its_own_score() -> None:
     for path in tools:
         text = path.read_text()
         assert "SCORE_DELIVERED" not in text, f"{path.name} reimplements the rating weights"
+
+
+def test_a_networks_own_tools_live_in_a_package_named_after_it() -> None:
+    """So a network is one directory, not two with different names.
+
+    The tools were under `coded_tools/ns_air` while the network was `ns_air_agent`, which
+    reads as two things until you have opened both. `ns` is the exception and stays: it is
+    the foundation the four modes share, and naming it after any one of them would be a lie.
+
+    Written against the manifest rather than against air alone, so water, road and rail
+    inherit the rule rather than each rediscovering it.
+    """
+    network = NETWORK
+    own = f"{network}."
+    for entry in _coded():
+        target = entry["class"]
+        assert target.startswith(("ns.", own)), (
+            f"{entry['name']} is {target}: a coded tool belongs either to the shared "
+            f"foundation (ns.) or to this network ({own})"
+        )
+
+
+def test_the_package_the_registry_names_is_the_one_on_disk() -> None:
+    """A class reference is a string, so nothing checks it until the tool is called."""
+    assert (_TOOLS / NETWORK).is_dir(), f"no coded_tools/{NETWORK} for the registry to load"
+    assert (_TOOLS / "ns").is_dir(), "the shared foundation should still be shared"

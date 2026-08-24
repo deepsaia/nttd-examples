@@ -31,7 +31,7 @@ try:
     from agents.neuro_san.coded_tools.ns.envelope import action, check
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.plan import Plan
-    from agents.neuro_san.coded_tools.ns_air.choose_aircraft import (
+    from agents.neuro_san.coded_tools.ns_air_agent.choose_aircraft import (
         airports_of,
         known_routes,
         name_of,
@@ -48,7 +48,7 @@ except ImportError:
     from ns.gateway import NttdGateway
     from ns.plan import Plan
 
-    from ns_air.choose_aircraft import (
+    from ns_air_agent.choose_aircraft import (
         airports_of,
         known_routes,
         name_of,

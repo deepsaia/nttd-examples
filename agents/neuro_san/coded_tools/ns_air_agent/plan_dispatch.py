@@ -39,13 +39,13 @@ try:
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.observation import known_routes as recorded_routes
     from agents.neuro_san.coded_tools.ns.plan import Plan
-    from agents.neuro_san.coded_tools.ns_air.choose_aircraft import (
+    from agents.neuro_san.coded_tools.ns_air_agent.choose_aircraft import (
         AIRCRAFT,
         known_routes,
         name_of,
         route_for,
     )
-    from agents.neuro_san.coded_tools.ns_air.plan_buy_aircraft import recorded_hangars
+    from agents.neuro_san.coded_tools.ns_air_agent.plan_buy_aircraft import recorded_hangars
 except ImportError:
     # Loaded by neuro-san from AGENT_TOOL_PATH, where ns and ns_air are siblings and the
     # package above them is not on the path. Both spellings are needed because
@@ -57,8 +57,8 @@ except ImportError:
     from ns.observation import known_routes as recorded_routes
     from ns.plan import Plan
 
-    from ns_air.choose_aircraft import AIRCRAFT, known_routes, name_of, route_for
-    from ns_air.plan_buy_aircraft import recorded_hangars
+    from ns_air_agent.choose_aircraft import AIRCRAFT, known_routes, name_of, route_for
+    from ns_air_agent.plan_buy_aircraft import recorded_hangars
 
 # Orders take what is waiting. 64 is OF_FULL_LOAD and it is how a vehicle stops being a
 # vehicle.

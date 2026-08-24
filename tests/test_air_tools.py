@@ -20,12 +20,12 @@ pytest.importorskip("neuro_san")
 from agents.neuro_san.coded_tools.ns import commit_plan, counting, note_decision, session  # noqa: E402
 from agents.neuro_san.coded_tools.ns.gateway import QueryRefused  # noqa: E402
 from agents.neuro_san.coded_tools.ns.note_decision import NoteDecision  # noqa: E402
-from agents.neuro_san.coded_tools.ns_air import air_keys as air  # noqa: E402
-from agents.neuro_san.coded_tools.ns_air.air_health_check import AirHealthCheck  # noqa: E402
-from agents.neuro_san.coded_tools.ns_air.choose_aircraft import accepts_big_planes  # noqa: E402
-from agents.neuro_san.coded_tools.ns_air.plan_dispatch import PlanDispatch  # noqa: E402
-from agents.neuro_san.coded_tools.ns_air.plan_repoint import PlanRepoint  # noqa: E402
-from agents.neuro_san.coded_tools.ns_air.plan_retire import PlanRetire, _sweep  # noqa: E402
+from agents.neuro_san.coded_tools.ns_air_agent import air_keys as air  # noqa: E402
+from agents.neuro_san.coded_tools.ns_air_agent.air_health_check import AirHealthCheck  # noqa: E402
+from agents.neuro_san.coded_tools.ns_air_agent.choose_aircraft import accepts_big_planes  # noqa: E402
+from agents.neuro_san.coded_tools.ns_air_agent.plan_dispatch import PlanDispatch  # noqa: E402
+from agents.neuro_san.coded_tools.ns_air_agent.plan_repoint import PlanRepoint  # noqa: E402
+from agents.neuro_san.coded_tools.ns_air_agent.plan_retire import PlanRetire, _sweep  # noqa: E402
 
 CREDENTIALS = {"session_id": "s-1", "token": "t-1"}
 
