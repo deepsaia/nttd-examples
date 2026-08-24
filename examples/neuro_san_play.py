@@ -38,6 +38,12 @@ logger = logging.getLogger("nttd.play")
 
 API_URL = os.environ.get("NTTD_API_URL", "http://127.0.0.1:8000")
 
+# What the board shows in its system type column. Declared HERE rather than passed in by
+# whatever launched this, so a run started by hand says the same thing as one started by the
+# launcher: the runner is the only thing that knows what it is. It matches the key runex
+# offers this runner under, which tests/test_runex.py asserts.
+SYSTEM_TYPE = "neuro-san"
+
 TURN = (
     "Take the next decision in this session. Read the position first, fix anything that is "
     "broken before building something new, and let time pass when you need the world to run "
@@ -58,6 +64,32 @@ def _status(session: str) -> dict:
         return {"ended": True}
 
 
+def _declare(session: str, token: str, network: str) -> None:
+    """Tell nttd what is playing, since it cannot see it.
+
+    nttd runs no model and watches only actions, so it cannot tell a multi-agent network from
+    a scripted policy by looking. What it is told lands in result.parquet and becomes the
+    board's system type column, so a row can say what produced it.
+
+    Not fatal. A session that will not take the declaration is still a session worth playing,
+    and losing a label is a smaller loss than refusing to start.
+    """
+    try:
+        reply = httpx.post(
+            f"{API_URL}/v1/participant/sessions/{session}/report",
+            headers={"X-Participant-Token": token},
+            json={
+                "nttd_framework": SYSTEM_TYPE,
+                "participant_type": "multi-agent",
+                "agent_id": network,
+            },
+            timeout=30,
+        )
+        reply.raise_for_status()
+    except httpx.HTTPError as failure:
+        logger.warning("Could not declare the system type: %r", failure)
+
+
 def play(session: str, token: str, network: str, host: str, port: int, turns: int) -> int:
     from neuro_san.client.streaming_input_processor import (  # noqa: PLC0415
         StreamingInputProcessor,
@@ -65,6 +97,8 @@ def play(session: str, token: str, network: str, host: str, port: int, turns: in
     from neuro_san.session.http_service_agent_session import (  # noqa: PLC0415
         HttpServiceAgentSession,
     )
+
+    _declare(session, token, network)
 
     agent = HttpServiceAgentSession(
         host=host, port=str(port), agent_name=network, streaming_timeout_in_seconds=1800

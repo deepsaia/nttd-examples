@@ -84,10 +84,6 @@ end condition, so you end the run yourself with `nttd session stop -s <session>`
 
 ## What step 4 looks like
 
-```bash
-uv run runex
-```
-
 Four questions in order, and the usual answer to all four is Enter:
 
 ```
@@ -195,16 +191,10 @@ rail type. A single network with a mode switch would be four strategies averaged
 Air is the one that is written. `agents/neuro_san/DESIGN.md` is the design and the evidence
 behind it; every rule in it cost a run to learn.
 
-```bash
-uv sync --extra neuro-san
-uv run ns run                        # terminal 3, the neuro-san server and its web UI
-uv run runex --kind neuro-san
-```
-
-`ns run` reads `.env` from the project root, which is why the API key belongs there rather
-than in a shell. It also serves NSFlow on <http://localhost:4173>, where every tool call
-and its arguments are visible while a turn runs: the quickest way to see why a network
-chose what it chose.
+Steps 3 and 4 above are how you run one. `uv run runex --kind neuro-san` skips the first
+question when you already know the answer. `agents/neuro_san/README.md` has the shape of a
+network: a strategist, four workers, twenty coded tools, and which failure each tool exists
+to prevent.
 
 ---
 
@@ -245,7 +235,7 @@ board reads what it wrote.
 
 ```bash
 # 5. Package what happened. Writes into <session dir>/submission.
-uv run nttd submit -s 20260824-132212ist-sly-marsh
+uv run nttd package -s 20260824-132212ist-sly-marsh
 
 # 6. Check it yourself before anyone else does.
 uv run nttd verify logs/sessions/20260824-132212ist-sly-marsh/submission
@@ -256,7 +246,7 @@ export HF_TOKEN=...                                      # your own token, write
 uv run nttd publish -s 20260824-132212ist-sly-marsh --entrant ada --id air-01
 ```
 
-**5. `nttd submit`** collects the savegame, the action log, the snapshots and the result row
+**5. `nttd package`** collects the savegame, the action log, the snapshots and the result row
 into one bundle with digests over each artifact. Needs no token.
 
 **6. `nttd verify`** runs the same checks the board runs and predicts a verdict: it reloads

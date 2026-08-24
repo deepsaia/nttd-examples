@@ -33,7 +33,7 @@ uv run runex                              # asks which approach, which session, 
 uv run python -m examples.minimal_runner --session <session> --token <token>
 
 # 3. Package what happened.                            (from an nttd checkout)
-uv run nttd submit -s <session>           # writes <session dir>/submission
+uv run nttd package -s <session>          # writes <session dir>/submission
 
 # 4. Check it yourself before sending it anywhere.
 uv run nttd verify <session dir>/submission
@@ -51,7 +51,7 @@ view and a board row to each other.
 
 ## What a bundle has to contain
 
-`nttd submit` assembles it, so the reliable way to produce one is to run that rather than
+`nttd package` assembles it, so the reliable way to produce one is to run that rather than
 copying files by hand. It carries the result, the action log, the game's events, the
 snapshot series, the tile scan, the resolved scenario, the savegame a verifier reloads, and
 a manifest holding a digest per artifact.
