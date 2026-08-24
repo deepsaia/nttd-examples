@@ -13,6 +13,10 @@ dependencies = [
     "requests>=2.32",
     "httpx>=0.28.0",
     "websockets>=14.0",
+    # `runex`, the interactive launcher. The same two the nttd CLI uses, so a contestant who
+    # has both installed sees one look rather than two.
+    "typer>=0.12.0",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +35,11 @@ dev = [
     "ruff>=0.8.0",
 ]
 
+[project.scripts]
+# Also runnable as `python -m runex` from a checkout, which is what the docs show, because it
+# needs no install step.
+runex = "runex.cli:app"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -40,7 +49,7 @@ build-backend = "hatchling.build"
 # anyone who installs both. It is kept because these are reference runners meant to be
 # read and copied rather than depended on, and moving them out of nttd is what made the
 # collision harmless.
-packages = ["agents"]
+packages = ["agents", "runex"]
 
 [tool.ruff]
 line-length = 120

@@ -2,8 +2,8 @@
 
 The neuro-san coded-tool tests need the `neuro-san` extra. An optional extra should not
 break collection for everyone who has not installed it, so those modules are skipped
-rather than erroring: `uv sync --extra langgraph` legitimately produces an environment
-without neuro_san, and seven collection errors is a misleading way to say so.
+rather than erroring: a plain `uv sync` legitimately produces an environment without
+neuro_san, and seven collection errors is a misleading way to say so.
 
     uv sync --extra neuro-san     # to run them
 """
