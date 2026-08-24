@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from typing import Any
 
@@ -84,10 +85,17 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="A minimal stepped nttd runner")
     parser.add_argument("--session", required=True, help="Session id, ses_...")
-    parser.add_argument("--token", required=True, help="Participant token, pt_...")
-    parser.add_argument("--url", default="http://127.0.0.1:8000")
+    # Defaulted from the environment so a launcher can pass it without putting a credential
+    # on the command line, where every process on the machine can read it.
+    parser.add_argument(
+        "--token", default=os.environ.get("NTTD_TOKEN", ""), help="Participant token, pt_...",
+    )
+    parser.add_argument("--url", default=os.environ.get("NTTD_API_URL", "http://127.0.0.1:8000"))
     parser.add_argument("--max-steps", type=int, default=500)
     args = parser.parse_args()
+
+    if not args.token:
+        parser.error("a participant token is required: --token or NTTD_TOKEN")
 
     client = NttdClient(base_url=args.url, session_id=args.session, token=args.token)
 

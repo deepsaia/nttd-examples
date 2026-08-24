@@ -202,7 +202,7 @@ def test_the_strategist_can_see_everything_and_act_once() -> None:
     """
     front = _entries()[0]
     held = set(front["tools"])
-    for needed in ("read_situation", "score_report", "fleet_report", "route_report"):
+    for needed in ("read_situation", "fleet_report", "route_report"):
         assert needed in held, f"the strategist cannot see {needed}"
     for needed in ("commit_plan", "advance_days", "note_decision"):
         assert needed in held, f"the strategist cannot {needed}"
@@ -217,15 +217,24 @@ def test_the_strategist_runs_a_stronger_model_than_the_workers() -> None:
     assert _network()["llm_config"]["model_name"] == "claude-sonnet"
 
 
+# A CHOSEN ceiling, not a measured one, and said so because the difference matters: the numbers
+# in this codebase are either read from the game's source or derived from the session, and a
+# style guard is neither. It exists to stop prose creeping back in once the rules have been moved
+# into tools, and the figure includes the shared ground rules every agent carries.
+INSTRUCTION_WORD_CEILING = 450
+
+
 def test_instructions_are_short_because_the_rules_live_in_the_tools() -> None:
     """A page of prose is a page a fresh sub-agent may skip.
 
-    Every worker is recreated each turn, so anything essential belongs in a tool that enforces
-    it or in the tool's own description, not in an instruction block.
+    Every worker is recreated each turn, so anything essential belongs in a tool that enforces it
+    or in the tool's own description, where it is read at the moment of use.
     """
     for entry in _agents():
         words = len(entry["instructions"].split())
-        assert words < 400, f"{entry['name']} has {words} words of instructions"
+        assert words < INSTRUCTION_WORD_CEILING, (
+            f"{entry['name']} has {words} words of instructions"
+        )
 
 
 def test_the_ground_rules_are_shared_not_restated() -> None:
@@ -251,3 +260,27 @@ def test_air_is_its_own_network_with_its_own_tools() -> None:
     shared = [entry["class"] for entry in _coded() if entry["class"].startswith("ns.")]
     assert len(air_only) >= 8, "air should carry its own siting, fleet and care tools"
     assert len(shared) >= 8, "the plumbing should be shared with the other three modes"
+
+
+def test_the_network_does_not_compute_its_own_score() -> None:
+    """Scoring is the benchmark's business, not the player's.
+
+    A score_report tool once decomposed OpenTTD's 1000 point rating into its nine components so
+    the strategist could optimise them. Two things were wrong with it. It reimplemented arithmetic
+    the engine already performs and reports as performance_rating, and its own docstring conceded
+    the estimate "can legitimately disagree" with that number: a tool that knowingly contradicts
+    the authority will mislead. And a benchmark meant to measure how well a company is run should
+    not hand the player a breakdown of the marking scheme, which measures something else.
+
+    The game's own rating still appears in read_situation, because that is the engine reporting
+    its own number rather than this network deriving one.
+    """
+    for entry in _entries():
+        assert entry["name"] != "score_report"
+        assert "score_report" not in entry.get("tools", [])
+
+    tools = list(_TOOLS.rglob("*.py"))
+    assert not [path for path in tools if path.stem == "score_report"]
+    for path in tools:
+        text = path.read_text()
+        assert "SCORE_DELIVERED" not in text, f"{path.name} reimplements the rating weights"

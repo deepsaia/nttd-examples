@@ -7,6 +7,9 @@ Two worked entries, named for the approach each one demonstrates.
 | `minimal_runner.py` | a whole stepped run with no model and no framework. Start here |
 | `neuro_san_play.py` | the same run played by the neuro-san agent networks in `agents/neuro_san/` |
 
+Either can be started by hand with `--session` and `--token`, or picked from a menu with
+`uv run runex`, which finds the open sessions and their tokens for you.
+
 Both drive the same HTTP surface, which is the point: nothing about a session assumes what
 is on the other end of it. A scripted policy, a single model, a multi-agent network or a
 learned one all attach the same way.
@@ -50,9 +53,11 @@ needs no rewriting.
 
 ## Actions are data, never parsed out of prose
 
-The LangGraph runner asks the model for structured output against a schema. The version
-before it scraped JSON out of markdown fences, and every model quirk became a new edge
-case in that parser.
+The neuro-san network stages actions through coded tools, which build the payload in
+Python from ids the game returned. The version before it scraped JSON out of markdown
+fences, and every model quirk became a new edge case in that parser. A tool that refuses
+an invented engine id is a rule enforced once; a prompt asking for valid ids is a rule
+re-litigated every turn.
 
 ## Tools read, they do not act
 

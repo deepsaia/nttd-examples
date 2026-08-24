@@ -19,11 +19,11 @@ landed a second ago. So each look records where a vehicle is, and the day it arr
 into sly_data. The verdict is about the number of days it has not moved, not about the state
 it is in.
 
-**Nothing is a fault before day 75.** cargo_delivered_total was exactly 0 until day 73 of the
-best measured run, because aircraft take that long to complete paying trips on a long leg, and
-the far end of a 289 tile trunk did not see its first aircraft until day 43. Before day 75 the
-harshest verdict available is "watch", or a network condemns a fleet that is simply still
-ramping.
+**Judge the vehicle, never the calendar.** This used to excuse everything before day 75, a
+number taken from one run where cargo delivered stayed at 0 until day 73. That is a fact about
+one map's long legs, not about the game, and as a RUN day it also gave no grace at all to an
+aircraft bought late. Nothing here depends on how far through the session it is, so the tool
+behaves the same on a one year run and a ten year one.
 
 **A staged repair is not a repair.** plan_repoint records that a repoint was staged, and only
 this tool may turn that into a repoint that happened, because only this tool can see the aircraft
@@ -57,12 +57,22 @@ except ImportError:
     from ns_air import air_keys as air
     from ns_air.choose_aircraft import AIRCRAFT
 
-# Before this day nothing is called broken. See the module docstring: 0 cargo delivered until
-# day 73 in the run that scored best.
-RAMP_DAYS = 75
+# There is no ramp period here, and there deliberately is not one.
+#
+# A flat "judge nothing before day 75" used to guard this, taken from one run where cargo
+# delivered stayed at 0 until day 73. That was a fact about one map's long legs rather than about
+# the game, and being a RUN day rather than a vehicle day it also judged an aircraft bought on
+# day 300 the moment it left the hangar.
+#
+# Replacing it with a per route estimate was worse: it needed a tiles-per-day-per-unit-of-speed
+# conversion that nothing in the engine publishes and no run here measured. Every one of the three
+# faults below is a real fault at any age, and a newly bought aircraft is already safe because the
+# not-moving clause counts from when this tool first saw it, so the window was protecting nothing.
 
-# Days in one place that make an aircraft stuck rather than busy. A passenger aircraft on a
-# long leg is back at a gate well inside a month, so a month of not moving is not loading.
+# Days in one place that make an aircraft stuck rather than busy. A CHOSEN threshold, not a
+# measured one: a passenger aircraft that has gone a month without changing tile is not loading,
+# whatever its leg. It is deliberately generous, because the cost of calling a working aircraft
+# stuck is higher than the cost of noticing a broken one a fortnight late.
 STUCK_DAYS = 30
 
 # Situation problems about a vehicle are phrased "vehicle <name or id> ...".
@@ -131,7 +141,7 @@ class AirHealthCheck(CodedTool):
 
         return {
             "day": day,
-            "judging": day >= RAMP_DAYS,
+            "judging": True,
             "aircraft": reports,
             # The ids worth acting on, which is why anything already being sold is not in them.
             "stuck": [
@@ -145,8 +155,10 @@ class AirHealthCheck(CodedTool):
             "next": (
                 "plan_repoint takes any vehicle_id listed here, and an aircraft parked in its "
                 "hangar with the right two orders needs nothing more than the start_vehicle "
-                f"plan_dispatch stages. Before day {RAMP_DAYS} nothing is called stuck, because "
-                "cargo delivered was 0 until day 73 of a working run: watch means watch, not act."
+                f"plan_dispatch stages. Stuck means {STUCK_DAYS} days on the same tile, or "
+                "orders that are not two station orders to two different stations, or a problem "
+                "the engine itself raised. Watch means one of those is close but not met, and "
+                "watch means watch rather than act."
             ),
         }
 
@@ -187,7 +199,12 @@ def _look_at(
 
     still = day - int(entry.get("since_day", day))
     orders_ok = _orders_look_right(vehicle)
-    verdict, why = _judge(day, still, orders_ok, named, entry)
+
+    # Per aircraft rather than per run, so a late purchase is described as new instead of as
+    # something the run has had all year to fix. The game reports age in days directly.
+    entry[air.IN_SERVICE_DAYS] = int(vehicle.get("age") or 0)
+
+    verdict, why = _judge(still, orders_ok, named, entry)
     entry["verdict"] = verdict
     entry["why"] = why
     # The two faults repointing fixes. Kept on the record so plan_repoint has a target list it
@@ -277,7 +294,6 @@ def _problems_naming(
 
 
 def _judge(
-    day: int,
     still: int,
     orders_ok: bool,
     named: list[str],
@@ -303,12 +319,6 @@ def _judge(
     elif entry.get(air.REPOINTED_DAY) is not None:
         reason = f"{reason}; last repointed on day {entry[air.REPOINTED_DAY]}"
 
-    if day < RAMP_DAYS:
-        return "watch", (
-            f"{reason}. Day {day}, so this is not a fault yet: cargo delivered was exactly 0 "
-            f"until day 73 of the best measured run, and nothing is condemned before day "
-            f"{RAMP_DAYS}"
-        )
     if still >= STUCK_DAYS or not orders_ok:
         return "stuck", reason
     return "watch", reason

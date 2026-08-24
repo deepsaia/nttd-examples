@@ -44,7 +44,11 @@ except ImportError:
 
 # The rating's loan component is max(0, 250,000 - loan), so every pound above this scores
 # nothing and costs interest as well.
-LOAN_SCORES_NOTHING_ABOVE = 250_000
+# The point above which a loan is worth mentioning. It is where OpenTTD stops crediting a
+# company for having repaid, so it is a real threshold rather than a chosen one, but the reason
+# given to the agent is the interest: how the run is marked is the benchmark's business and not
+# something the player should be optimising against.
+LOAN_WORTH_MENTIONING_ABOVE = 250_000
 
 # How many problems to print. The engine emits one per orderless vehicle and one per piled
 # up station, so a thirty vehicle fleet can produce thirty lines, and a report nobody
@@ -100,8 +104,8 @@ class ReadSituation(CodedTool):
         )
         lines.append(
             f"cargo delivered {obs.money(company.get('cargo_delivered_total'))} so far. "
-            "That is SCORE_DELIVERED, 400 of the 1,000 rating points and four times any "
-            "other component: the decision that moves more cargo wins."
+            "This is what the company exists to do, and the decision that moves more of it "
+            "beats the one that looks tidier."
         )
         lines.append(_rating(company))
         lines.extend(_problem_lines(problems))
@@ -158,12 +162,12 @@ def _is_leap(year: int) -> bool:
 
 def _loan_lines(loan: int) -> list[str]:
     """Said only when it is true, so the line means something when it appears."""
-    if loan <= LOAN_SCORES_NOTHING_ABOVE:
+    if loan <= LOAN_WORTH_MENTIONING_ABOVE:
         return []
     return [
-        f"LOAN: {obs.money(loan)} is above {obs.money(LOAN_SCORES_NOTHING_ABOVE)}, so "
-        f"SCORE_LOAN scores 0 of its 50 points. Repaying to "
-        f"{obs.money(LOAN_SCORES_NOTHING_ABOVE)} buys all 50 back and stops the interest."
+        f"LOAN: {obs.money(loan)} is more than {obs.money(LOAN_WORTH_MENTIONING_ABOVE)}. "
+        "Borrowed money that is not buying anything still costs interest every day, so "
+        "repay what the company is not about to spend."
     ]
 
 

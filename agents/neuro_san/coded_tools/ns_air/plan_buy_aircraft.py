@@ -27,7 +27,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 
 try:
     # Loaded as part of this repository, which is how the tests import it.
-    from agents.neuro_san.coded_tools.ns import counting, session
+    from agents.neuro_san.coded_tools.ns import counting, session, timing
     from agents.neuro_san.coded_tools.ns.envelope import action, check
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.plan import Plan
@@ -43,7 +43,7 @@ except ImportError:
     # package above them is not on the path. Both spellings are needed because
     # AGENT_TOOL_PATH_ONLY=true deliberately stops a class reference resolving from anywhere
     # on PYTHONPATH.
-    from ns import counting, session
+    from ns import counting, session, timing
     from ns.envelope import action, check
     from ns.gateway import NttdGateway
     from ns.plan import Plan
@@ -55,9 +55,6 @@ except ImportError:
         rank_aircraft,
         route_for,
     )
-
-# Roughly what an aircraft needs to return its price at the rates measured in play.
-DAYS_TO_PAY_BACK = 120
 
 # More than this in one batch is a fleet bought before a single one has been seen to fly.
 MOST_AT_ONCE = 4
@@ -80,10 +77,7 @@ class PlanBuyAircraft(CodedTool):
                 "nowhere to land earns nothing and still costs running money."
             )
 
-        late = refuse_if_late(await gateway.observe())
-        if late:
-            return late
-
+        world = await gateway.observe()
         airports = await airports_of(gateway, route)
         ranked = await rank_aircraft(gateway, route, airports)
         if not ranked:
@@ -92,6 +86,13 @@ class PlanBuyAircraft(CodedTool):
                 f"{name_of(route)}. Call choose_aircraft to see what the airports allow."
             )
         engine = ranked[0]
+
+        # Checked here rather than before the engine was chosen, because the question is whether
+        # THIS aircraft at THIS price can still earn its cost back on what this company actually
+        # makes per day, which needs both numbers.
+        late = refuse_if_late(world, int(engine.get("price") or 0))
+        if late:
+            return late
 
         hangar = await hangar_for(gateway, route, airports)
         if hangar is None:
@@ -172,15 +173,27 @@ def days_left(world: dict[str, Any]) -> int | None:
     return int(game.get("game_days_remaining") or 0)
 
 
-def refuse_if_late(world: dict[str, Any]) -> str | None:
-    """The refusal to hand back when there is no time left to earn a price back, else None."""
-    remaining = days_left(world)
-    if remaining is None or remaining >= DAYS_TO_PAY_BACK:
+def refuse_if_late(world: dict[str, Any], price: int) -> str | None:
+    """The refusal to hand back when a purchase can no longer earn its cost, else None.
+
+    The arithmetic lives in ns/timing.py, which works the payback out from what this fleet is
+    observed to earn rather than from a remembered figure. It refuses only on evidence: early in
+    a run nothing has earned yet, no rate can be computed, and early is exactly when buying is
+    right, so an absent estimate permits the purchase.
+
+    This used to be a flat 120 days for every session and every aircraft. A session here runs
+    anywhere from 366 to 3,653 days and an aeroplane's price and its route both vary, so one
+    number was wrong nearly everywhere it was applied.
+    """
+    total, remaining = timing.horizon(world)
+    if not total:
+        return None
+    too_late, why = timing.too_late_to_buy(price, world, total - remaining)
+    if not too_late:
         return None
     return (
-        f"Error: {remaining} game days remain and an aircraft needs about {DAYS_TO_PAY_BACK} to "
-        "return its price, so this one would be cash turned into a depreciating asset. Buy "
-        "nothing. Keep what is flying in the air and pay the loan down instead."
+        f"Error: {why} Buy nothing. Keep what is flying in the air and pay the loan down "
+        "instead."
     )
 
 
