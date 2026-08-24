@@ -40,13 +40,13 @@ try:
     from agents.neuro_san.coded_tools.ns.envelope import action, check
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.plan import Plan
-    from agents.neuro_san.coded_tools.ns_air import air_keys as air
-    from agents.neuro_san.coded_tools.ns_air.choose_aircraft import (
+    from agents.neuro_san.coded_tools.ns_air_agent import air_keys as air
+    from agents.neuro_san.coded_tools.ns_air_agent.choose_aircraft import (
         known_routes,
         name_of,
         route_for,
     )
-    from agents.neuro_san.coded_tools.ns_air.plan_dispatch import (
+    from agents.neuro_san.coded_tools.ns_air_agent.plan_dispatch import (
         STOPS_PER_ROUTE,
         TAKE_WHAT_IS_THERE,
     )
@@ -61,9 +61,9 @@ except ImportError:
     from ns.gateway import NttdGateway
     from ns.plan import Plan
 
-    from ns_air import air_keys as air
-    from ns_air.choose_aircraft import known_routes, name_of, route_for
-    from ns_air.plan_dispatch import STOPS_PER_ROUTE, TAKE_WHAT_IS_THERE
+    from ns_air_agent import air_keys as air
+    from ns_air_agent.choose_aircraft import known_routes, name_of, route_for
+    from ns_air_agent.plan_dispatch import STOPS_PER_ROUTE, TAKE_WHAT_IS_THERE
 
 # How long a repoint is given before the same aircraft may be repointed again. A repair is not
 # visible the next day: the far end of a 289 tile trunk did not see its first aircraft until

@@ -30,14 +30,14 @@ try:
     from agents.neuro_san.coded_tools.ns import envelope, session
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway, QueryRefused
     from agents.neuro_san.coded_tools.ns.plan import Plan
-    from agents.neuro_san.coded_tools.ns_air.rank_corridors import corridor_key, corridors_from_sites
+    from agents.neuro_san.coded_tools.ns_air_agent.rank_corridors import corridor_key, corridors_from_sites
 except ImportError:
     from ns import constants as key
     from ns import envelope, session
     from ns.gateway import NttdGateway, QueryRefused
     from ns.plan import Plan
 
-    from ns_air.rank_corridors import corridor_key, corridors_from_sites
+    from ns_air_agent.rank_corridors import corridor_key, corridors_from_sites
 
 # The kind of decision this tool writes and confirm_airports reads back. Named once, because a
 # typo here does not raise, it just means confirm never finds the intent it is looking for.

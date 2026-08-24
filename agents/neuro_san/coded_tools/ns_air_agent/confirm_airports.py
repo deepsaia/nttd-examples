@@ -31,15 +31,15 @@ try:
     from agents.neuro_san.coded_tools.ns import constants as key
     from agents.neuro_san.coded_tools.ns import session
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway, QueryRefused
-    from agents.neuro_san.coded_tools.ns_air import air_rules
-    from agents.neuro_san.coded_tools.ns_air.plan_build_corridor import CORRIDOR_INTENT
+    from agents.neuro_san.coded_tools.ns_air_agent import air_rules
+    from agents.neuro_san.coded_tools.ns_air_agent.plan_build_corridor import CORRIDOR_INTENT
 except ImportError:
     from ns import constants as key
     from ns import session
     from ns.gateway import NttdGateway, QueryRefused
 
-    from ns_air import air_rules
-    from ns_air.plan_build_corridor import CORRIDOR_INTENT
+    from ns_air_agent import air_rules
+    from ns_air_agent.plan_build_corridor import CORRIDOR_INTENT
 
 
 class ConfirmAirports(CodedTool):

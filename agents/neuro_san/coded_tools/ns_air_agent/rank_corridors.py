@@ -30,12 +30,12 @@ from neuro_san.interfaces.coded_tool import CodedTool
 try:
     from agents.neuro_san.coded_tools.ns import constants as key
     from agents.neuro_san.coded_tools.ns import counting
-    from agents.neuro_san.coded_tools.ns_air import air_rules
+    from agents.neuro_san.coded_tools.ns_air_agent import air_rules
 except ImportError:
     from ns import constants as key
     from ns import counting
 
-    from ns_air import air_rules
+    from ns_air_agent import air_rules
 
 DEFAULT_LIMIT = 8
 

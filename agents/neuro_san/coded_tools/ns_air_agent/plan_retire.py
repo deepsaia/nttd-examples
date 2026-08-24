@@ -40,9 +40,9 @@ try:
     from agents.neuro_san.coded_tools.ns.envelope import action, check
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway
     from agents.neuro_san.coded_tools.ns.plan import Plan
-    from agents.neuro_san.coded_tools.ns_air import air_keys as air
-    from agents.neuro_san.coded_tools.ns_air.choose_aircraft import AIRCRAFT
-    from agents.neuro_san.coded_tools.ns_air.plan_repoint import REPOINT_GRACE_DAYS
+    from agents.neuro_san.coded_tools.ns_air_agent import air_keys as air
+    from agents.neuro_san.coded_tools.ns_air_agent.choose_aircraft import AIRCRAFT
+    from agents.neuro_san.coded_tools.ns_air_agent.plan_repoint import REPOINT_GRACE_DAYS
 except ImportError:
     # Loaded by neuro-san from AGENT_TOOL_PATH, where ns and ns_air are siblings and the
     # package above them is not on the path. Both spellings are needed because
@@ -53,9 +53,9 @@ except ImportError:
     from ns.gateway import NttdGateway
     from ns.plan import Plan
 
-    from ns_air import air_keys as air
-    from ns_air.choose_aircraft import AIRCRAFT
-    from ns_air.plan_repoint import REPOINT_GRACE_DAYS
+    from ns_air_agent import air_keys as air
+    from ns_air_agent.choose_aircraft import AIRCRAFT
+    from ns_air_agent.plan_repoint import REPOINT_GRACE_DAYS
 
 # How many times a sale may be asked for. A sale is only ever staged once the game says the
 # aircraft is stopped in its hangar, so a refusal after that is something else, and asking a

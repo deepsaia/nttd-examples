@@ -39,15 +39,15 @@ try:
     from agents.neuro_san.coded_tools.ns import constants as key
     from agents.neuro_san.coded_tools.ns import counting, session
     from agents.neuro_san.coded_tools.ns.gateway import NttdGateway, QueryRefused
-    from agents.neuro_san.coded_tools.ns_air import air_rules
+    from agents.neuro_san.coded_tools.ns_air_agent import air_rules
 except ImportError:
-    # Loaded by neuro-san from AGENT_TOOL_PATH, where `ns` and `ns_air` are packages beside
+    # Loaded by neuro-san from AGENT_TOOL_PATH, where `ns` and `ns_air_agent` are packages beside
     # the module being loaded and the packages above them are not on the path.
     from ns import constants as key
     from ns import counting, session
     from ns.gateway import NttdGateway, QueryRefused
 
-    from ns_air import air_rules
+    from ns_air_agent import air_rules
 
 # A town too small to fill anything. Measured: a 348 person endpoint sent 480 seat planes back
 # almost empty on a leg that cost exactly as much to fly as one into a city.
