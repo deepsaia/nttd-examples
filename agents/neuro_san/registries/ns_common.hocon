@@ -38,6 +38,11 @@ ns_allow = {
             "fleet_seen"  # last known vehicle ids, which is how a crash is noticed
             "air_health"  # how long each aircraft has been in its current state
             "air_retiring" # vehicles sent to a depot and awaiting sale
+            "rail_rail_type" # the one rail technology this company builds and buys in
+            "rail_pairs"  # producer and consumer industries paired by a cargo they share
+            "rail_intent" # what each corridor was MEANT to be, which is how a partial build is read
+            "rail_health" # how long each train has been where it is, and its last verdict
+            "rail_retiring" # trains sent to a depot and awaiting sale
             "days_this_turn" # days already spent this turn, which is what bounds a turn
             "turn_stamp"   # which turn those days belong to, stamped by the runner
             "turn_stamp_seen" # the stamp as advance_days last saw it

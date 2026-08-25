@@ -5,8 +5,10 @@
 # share a body of water at all, and rail on platform axis, depot junction and rail type. A single
 # network with a mode switch would be four strategies averaged into none.
 #
-# Air first, and the only one enabled: it is the mode that scores highest and it exercises the
-# shared foundation the other three will reuse.
+# Air first: it is the mode that scores highest and it exercises the shared foundation. Rail
+# second, and it is the interesting one, because it is where a route can look finished in every
+# report and carry nothing. Road and water are not written yet.
 {
     "ns_air_agent.hocon": true
+    "ns_rail_agent.hocon": true
 }
