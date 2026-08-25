@@ -7,6 +7,12 @@ nttd does not run your agent. It owns the world and the record; you own the loop
 here imports the `nttd` package: every runner talks HTTP, so you do not need the engine
 installed to write an entry, and an entry written in another language is on equal footing.
 
+| repository | what it owns |
+|---|---|
+| `nttd` | the engine. Draws the world, runs the game, records the artifacts, scores the result. |
+| `nttd-examples` | **this one.** Contestant-side runners: the loop that decides what to do. |
+| `nttd-leaderboard` | the board. Verifies a submitted bundle and publishes the verdict. |
+
 ---
 
 ## Install
@@ -194,9 +200,18 @@ access to the board, and the entrant is read from it: the board refuses a diff o
 `submissions/<the account that opened it>/`, so a name that is merely a label is a submission
 that bounces. `--dry-run` first shows exactly what would be filed and where.
 
-The pull request must then be **merged** before verification will find it. The board ranks on
-`company_value`, what the company is worth when the run ends, with `total_cargo` breaking a
-tie. Both come straight from the game.
+The pull request must then be **merged** before verification will find it: verification reads
+the dataset's main branch, so an unmerged one has nothing there to verify.
 
-[docs/submitting.md](docs/submitting.md) has the whole path and says which of the three
-repositories owns which part.
+| verdict | what it means |
+|---|---|
+| `verified` | every check passed, including that the world matches its declared seed |
+| `replayed` | the score was recomputed from the savegame; the world was not reconciled |
+| `unverified` | the artifacts do not support checking, or nobody has judged it yet |
+
+An unverified row is still published: a self-reported score, labelled as one, ranked alongside
+the rest rather than hidden. The board ranks on `company_value`, what the company is worth when
+the run ends, with `total_cargo` breaking a tie. Both come straight from the game.
+
+It never replaces a row with a better one, and never compares you against yourself. Every
+submission is its own row, so a worse second attempt costs nothing.
