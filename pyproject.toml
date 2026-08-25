@@ -1,5 +1,5 @@
 [project]
-name = "nttd-examples"
+name = "nttd-workbench"
 version = "0.1.0"
 description = "Reference runners for the nttd OpenTTD benchmark"
 readme = "README.md"

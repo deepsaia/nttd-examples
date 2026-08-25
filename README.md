@@ -1,4 +1,4 @@
-# nttd-examples
+# nttd-workbench
 
 Reference runners for [nttd](https://github.com/deepsaia/nttd), a benchmark for
 long-horizon planning built on OpenTTD.
@@ -10,7 +10,7 @@ installed to write an entry, and an entry written in another language is on equa
 | repository | what it owns |
 |---|---|
 | `nttd` | the engine. Draws the world, runs the game, records the artifacts, scores the result. |
-| `nttd-examples` | **this one.** Contestant-side runners: the loop that decides what to do. |
+| `nttd-workbench` | **this one.** Contestant-side runners: the loop that decides what to do. |
 | `nttd-leaderboard` | the board. Verifies a submitted bundle and publishes the verdict. |
 
 ---
@@ -18,8 +18,8 @@ installed to write an entry, and an entry written in another language is on equa
 ## Install
 
 ```bash
-git clone git@github.com:deepsaia/nttd-examples.git
-cd nttd-examples
+git clone git@github.com:deepsaia/nttd-workbench.git
+cd nttd-workbench
 uv sync                      # requests, httpx, websockets, and the runex launcher
 uv sync --extra neuro-san    # + the neuro-san agent networks
 cp .env.example .env         # then fill in ANTHROPIC_API_KEY
