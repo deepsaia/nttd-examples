@@ -1,0 +1,525 @@
+include "agents/neuro_san/registries/ns_common.hocon"
+
+llm_config = ${ns_llm_config}
+allow = ${ns_allow}
+
+metadata {
+    description = "Plays one nttd session as a rail freight company. Rail pays best over long hauls and is the only mode where a route can look finished in every report and carry nothing, so most of this network is about proving each part exists before the next one is built."
+    tags = ["nttd", "rail"]
+    sample_queries = [
+        "Take the next decision in this session."
+        "The train was built but nothing is being delivered. What is wrong?"
+        "Where should the next corridor go?"
+    ]
+}
+
+# No AAOSA, for the reason air gives: the four workers have fixed, known jobs, so the
+# strategist calls the one it needs and the protocol's extra model calls buy nothing.
+tools = [
+
+    # =========================================================================================
+    # The strategist. The front man deliberately: neuro-san preserves only the front man's
+    # history across turns, so any other agent starts each turn with amnesia.
+    # =========================================================================================
+    {
+        name = "RailCompany"
+        function {
+            description = """
+Plays one turn of an nttd session as a rail freight company: works out what matters now, does
+it, and lets the world run.
+"""
+        }
+        llm_config = { "model_name": "claude-opus" }
+        instructions = """
+You run one rail freight company for a whole session, and you play it to the end.
+
+A session is as long as it is: the shipped ones run from one game year to ten, so never assume
+a length. read_situation reports how many days remain, and plans are measured against those.
+
+RAIL IS NOT AIR WITH TRACK. A rail corridor is two stations, a line joining them, and a depot
+joined to that line, and each part only makes sense once the one before it really exists. So a
+corridor is built in this order, and the order is not negotiable:
+
+    choose_rail_type -> Scout surveys and ranks -> Builder stages both stations and the line ->
+    COMMIT -> Builder confirms -> Builder adds the depot -> COMMIT -> Builder confirms again ->
+    only now FleetGrowth buys a train -> COMMIT -> dispatch
+
+Four commits and five game days before a train moves, because commit_plan gives connect_rail a
+step of its own. Skipping a confirm does not save a day; it buys a locomotive for a line with a
+gap in it, and that money is gone for the rest of the run.
+
+Every turn, in this order:
+1. read_situation.
+2. If something is broken, hand it to FleetCare first. A train that is not earning is money
+   already spent.
+3. Otherwise advance the newest corridor by one step above, or start a new one once the last
+   is carrying.
+4. commit_plan once, when everything for this turn is staged.
+5. advance_days, so the world can show you whether it worked.
+
+Use note_decision when you commit to something, and say why. Keep taking turns until the
+session ends.
+""" ${ns_ground_rules}
+        tools = [
+            "Scout", "Builder", "FleetGrowth", "FleetCare",
+            "read_situation", "fleet_report", "route_report",
+            "inspect", "refusals", "set_loan_to", "commit_plan", "advance_days",
+            "note_decision",
+        ]
+    }
+
+    # =========================================================================================
+    # Workers. Each owns one part of the job and the failures that part is prone to.
+    # =========================================================================================
+    {
+        name = "Scout"
+        function {
+            description = "Decides the rail type, finds industry pairs worth hauling between, and ranks them."
+            parameters = {
+                type = "object"
+                properties = {
+                    inquiry = { type = "string", description = "What the strategist wants to know" }
+                }
+                required = ["inquiry"]
+            }
+        }
+        instructions = """
+You find corridors worth laying track for.
+
+choose_rail_type FIRST, always, and once. A station, every track segment, the depot and the
+locomotive all carry a rail type, and a line built in one with an engine bought in another is a
+train that cannot enter its own route. The tool will not offer a type the game sells no
+locomotive for: on one measured map only 12 of 40 train engines ran on the default type and the
+rest were monorail and maglev, so the default is a corridor no train can ever use.
+
+survey_rail_pairs then joins producers to consumers that take what they make. Rail carries
+FREIGHT between industries, not passengers between towns, so a pair only exists when the cargo
+matches at both ends. It also picks the station spot at each end, and it picks it by the axis
+the line will arrive on rather than by distance. Do not ask it for a nearer spot: siting by
+distance is what built three separate stations that no train could enter.
+
+rank_corridors orders what it found. Report the best few by pair_id, with the cargo, the
+distance, and what the far end accepts.
+""" ${ns_worker_conduct}
+        tools = ["choose_rail_type", "survey_rail_pairs", "rank_corridors", "inspect"]
+    }
+
+    {
+        name = "Builder"
+        function {
+            description = "Builds a chosen corridor part by part, and proves each part before the next."
+            parameters = {
+                type = "object"
+                properties = {
+                    inquiry = { type = "string", description = "Which corridor to build, by pair_id" }
+                }
+                required = ["inquiry"]
+            }
+        }
+        instructions = """
+You build corridors, and most of your job is refusing to go on until the last part is real.
+
+plan_build_corridor stages both stations and the line between them in one batch, in that order,
+because the line is hinted at the platforms and cannot be hinted at platforms that do not exist
+yet. It does not stage the depot: find_rail_depot_spot searches for a tile beside EXISTING
+rail, so asked before the line is laid it correctly returns nothing.
+
+After the commit, confirm_rail_route. This is the tool the mode turns on. connect_rail keeps
+whatever it managed and reports the rest, and its own words for the bad case are "every segment
+built, but the line is not continuous: 1 of 5 have no through connection, first at (175,231)".
+Every segment built. A corridor in that state draws on the map, reports as finished, and
+carries nothing.
+
+Then plan_add_depot, commit, and confirm_rail_route AGAIN. Building a depot does not join it to
+the line; the neighbouring track needs a curve facing the entrance, which is what connect_depot
+supplies. A depot that was built and never joined reads as a depot in every report, and a train
+built inside it cannot leave.
+
+Only when confirm_rail_route lists a corridor under ready_for_a_train is it a route.
+""" ${ns_worker_conduct}
+        tools = ["plan_build_corridor", "confirm_rail_route", "plan_add_depot", "inspect"]
+    }
+
+    {
+        name = "FleetGrowth"
+        function {
+            description = "Puts trains on a confirmed corridor and gets them running."
+            parameters = {
+                type = "object"
+                properties = {
+                    inquiry = { type = "string", description = "How many trains, and for which corridor" }
+                }
+                required = ["inquiry"]
+            }
+        }
+        instructions = """
+You put trains on corridors that confirm_rail_route has already called ready_for_a_train.
+
+choose_train reads what the game will actually sell for this line's rail type and tells a
+locomotive from a wagon by the list's own flag. Never name an engine yourself: a run once
+submitted the same purchase 35 times with invented ids, every one refused.
+
+plan_buy_train stages ONE train, a locomotive with wagons coupled in the same call. This is the
+rule that earns zero while looking complete: a locomotive on its own runs its route, reports a
+position and a profit line, and carries nothing, and no report anywhere distinguishes it from a
+working train except the cargo figure that stays at zero. The reply says how many wagons
+actually attached, and it is worth reading.
+
+plan_dispatch gives it the two station orders and starts it. Leave the order flags off. A
+station only starts producing once a vehicle has visited it, so a train told to wait for a full
+load sits in an empty station forever and the route never starts.
+""" ${ns_worker_conduct}
+        tools = ["choose_train", "plan_buy_train", "plan_dispatch", "inspect"]
+    }
+
+    {
+        name = "FleetCare"
+        function {
+            description = "Keeps the fleet earning: diagnoses what is stuck, lost or hauling nothing, and repairs it."
+            parameters = {
+                type = "object"
+                properties = {
+                    inquiry = { type = "string", description = "What appears to be wrong" }
+                }
+                required = ["inquiry"]
+            }
+        }
+        instructions = """
+You keep the fleet earning.
+
+rail_health_check judges each train on how long it has been where it is, not on where it is:
+loading at a platform and sitting in a depot are both normal, and treating them as faults once
+made a healthy fleet read as a wall of problems. It gives one of three verdicts worth acting on:
+
+- LOST means the game itself says this train has a route it cannot run. Believe it over any
+  track walk: trace_route says the rails join, which is not the same as saying this train, on
+  its approach axis, at its length, can run them. plan_repoint gives it fresh orders.
+- CARRIES_NOTHING is a locomotive whose wagons never attached. No order fixes that. It has to
+  be sold and rebuilt.
+- STUCK means it has not moved in a month. Try plan_repoint first: fixing orders is free and
+  selling is not.
+
+plan_repoint CLEARS a train's orders before re-issuing them, because add_order appends and a
+train given two more ends with four, zig-zagging between two unrelated pairs.
+
+plan_retire sends a hopeless train to a depot and sells it on a LATER turn once it has arrived;
+the two cannot be done in one step. It will refuse if no corridor has a depot joined to its
+line, and that refusal is right: a train sent to a depot it cannot reach never arrives, and the
+sale never becomes possible.
+""" ${ns_worker_conduct}
+        tools = ["rail_health_check", "plan_repoint", "plan_retire", "fleet_report", "inspect"]
+    }
+
+    # =========================================================================================
+    # Coded tools. Every invariant that cost a run lives in one of these rather than in prose,
+    # because a rule in a prompt is advice and a rule in Python is enforced.
+    # =========================================================================================
+
+    # ---- reading, all free: none of these costs a game day ----------------------------------
+    {
+        name = "read_situation"
+        function = { description = """
+Where the company stands: the date, days remaining, money, the loan against the 250,000 above
+which the rating scores nothing for it, what is built, cargo delivered, and the engine's own
+problems list word for word. Call this FIRST every turn; the other reports read what it caches.
+""" }
+        class = "ns.read_situation.ReadSituation"
+    }
+    {
+        name = "fleet_report"
+        function = { description = """
+Every vehicle with its profit, age, speed, orders and the route it actually runs, worst earner
+first. Also names any vehicle that has vanished since the last look, which is how a crash is
+noticed: nothing else announces one.
+""" }
+        class = "ns.fleet_report.FleetReport"
+    }
+    {
+        name = "route_report"
+        function = { description = """
+Per route: its ends, cargo waiting at each, vehicles serving it and what they earn. The verdict
+line says whether it wants another vehicle or whether the money belongs in a new corridor.
+""" }
+        class = "ns.route_report.RouteReport"
+    }
+    {
+        name = "inspect"
+        function = {
+            description = "The full record for one station, vehicle or town, when a decision turns on a detail the reports leave out."
+            parameters = {
+                type = "object"
+                properties = {
+                    what = { type = "string", description = "station, vehicle or town" }
+                    which = { type = "string", description = "A name exactly as a report printed it, or a numeric id" }
+                }
+                required = ["what", "which"]
+            }
+        }
+        class = "ns.inspect_entity.Inspect"
+    }
+    {
+        name = "refusals"
+        function = { description = """
+What the game has refused, grouped with a count. Read it before repeating anything: one run
+submitted the same purchase 35 times because nothing carried the refusal forward.
+""" }
+        class = "ns.refusals.Refusals"
+    }
+
+    # ---- the only tools that cost game days -------------------------------------------------
+    {
+        name = "commit_plan"
+        function = { description = """
+Submits everything staged this turn as ONE batch, for one game day. Checks it first: anything
+already refused is dropped, wrong parameters are reported rather than sent, and a batch that
+cannot be afforded is refused. Returns what the game said about each action.
+""" }
+        class = "ns.commit_plan.CommitPlan"
+    }
+    {
+        name = "advance_days"
+        function = {
+            description = """
+Lets the world run and reports what changed: cargo delivered, money, rating, and how many
+vehicles are moving. A train needs longer than an aircraft to show anything, because it has to
+cross the line and load at both ends.
+"""
+            parameters = {
+                type = "object"
+                properties = {
+                    days = { type = "integer", description = "Game days to let pass, up to 120" }
+                }
+                required = ["days"]
+            }
+        }
+        class = "ns.advance_days.AdvanceDays"
+    }
+    {
+        name = "set_loan_to"
+        function = {
+            description = """
+Sets the company loan. A company opens with 100,000 and a rail corridor is stations, track and
+a depot before it earns anything, so borrowing is how a run reaches revenue at all. Above
+250,000 the rating's loan component scores nothing, so borrow against something you are about
+to build.
+"""
+            parameters = {
+                type = "object"
+                properties = {
+                    amount = { type = "integer", description = "The loan to hold" }
+                }
+                required = ["amount"]
+            }
+        }
+        class = "ns.set_loan_to.SetLoanTo"
+    }
+
+    # ---- memory ----------------------------------------------------------------------------
+    {
+        name = "note_decision"
+        function = {
+            description = """
+Records what was decided and why, so a later turn can tell whether it worked. Returns recent
+decisions and flags any whose review is due.
+"""
+            parameters = {
+                type = "object"
+                properties = {
+                    decision = { type = "string", description = "What was decided" }
+                    because = { type = "string", description = "The evidence it rests on" }
+                    review_in_days = { type = "integer", description = "When to check it worked" }
+                }
+                required = ["decision", "because"]
+            }
+        }
+        class = "ns.note_decision.NoteDecision"
+    }
+
+    # ---- rail: siting ------------------------------------------------------------------------
+    {
+        name = "choose_rail_type"
+        function = { description = """
+The rail technology this company builds and buys in, decided once. Only offers a type the game
+will sell both a locomotive and a wagon for: on one measured map only 12 of 40 train engines ran
+on the default type, so building with it would have laid a line no train could ever use.
+""" }
+        class = "ns_rail_agent.choose_rail_type.ChooseRailType"
+    }
+    {
+        name = "survey_rail_pairs"
+        function = {
+            description = """
+Producer industries paired with consumers that accept what they make, each with a station spot
+that faces the axis the line will arrive on. Sited by industry id rather than by town, because a
+station at the town nearest an industry does not serve the industry.
+"""
+            parameters = {
+                type = "object"
+                properties = { most_industries = { type = "integer", description = "How many industries to examine" } }
+            }
+        }
+        class = "ns_rail_agent.survey_rail_pairs.SurveyRailPairs"
+    }
+    {
+        name = "rank_corridors"
+        function = {
+            description = """
+The surveyed pairs worth building, best first, each with a pair_id to name it by. Ranked on
+distance inside the band rail is paid for, and tied on what the consuming end accepts.
+"""
+            parameters = {
+                type = "object"
+                properties = { limit = { type = "integer", description = "How many corridors to return" } }
+            }
+        }
+        class = "ns_rail_agent.rank_corridors.RankCorridors"
+    }
+    {
+        name = "plan_build_corridor"
+        function = {
+            description = """
+Stages both stations and the line between them as one batch, in the order that works: the
+platforms on the axis the finder agreed to, then the track hinted at both of them. The depot is
+deliberately not staged, because the search for one looks for a tile beside existing rail.
+"""
+            parameters = {
+                type = "object"
+                properties = { pair_id = { type = "string", description = "From rank_corridors" } }
+                required = ["pair_id"]
+            }
+        }
+        class = "ns_rail_agent.plan_build_corridor.PlanBuildCorridor"
+    }
+    {
+        name = "confirm_rail_route"
+        function = {
+            description = """
+Run after every corridor commit. Asks the game what is actually there and says which part is
+missing: a station, the line, or a depot joined to it. connect_rail keeps a partial build and
+reports it, so a reply is not a line that joins, and only this says a corridor is ready.
+"""
+            parameters = {
+                type = "object"
+                properties = { pair_id = { type = "string", description = "One corridor, or omit for all staged" } }
+            }
+        }
+        class = "ns_rail_agent.confirm_rail_route.ConfirmRailRoute"
+    }
+    {
+        name = "plan_add_depot"
+        function = {
+            description = """
+Stages a depot beside a line that already exists, and the piece that joins it on. Both, because
+building a depot does not connect it and a train built in an unjoined one cannot leave.
+"""
+            parameters = {
+                type = "object"
+                properties = { pair_id = { type = "string", description = "A corridor whose stage is no_depot" } }
+                required = ["pair_id"]
+            }
+        }
+        class = "ns_rail_agent.plan_add_depot.PlanAddDepot"
+    }
+
+    # ---- rail: fleet -------------------------------------------------------------------------
+    {
+        name = "choose_train"
+        function = {
+            description = """
+The locomotive and wagon to build for a corridor, from the game's own list, filtered to the
+line's rail type. Tells the two apart by the list's own is_wagon flag rather than by name.
+"""
+            parameters = {
+                type = "object"
+                properties = { pair_id = { type = "string", description = "Which corridor" } }
+                required = ["pair_id"]
+            }
+        }
+        class = "ns_rail_agent.choose_train.ChooseTrain"
+    }
+    {
+        name = "plan_buy_train"
+        function = {
+            description = """
+Stages one locomotive WITH wagons coupled, into a corridor's connected depot, refitted to the
+cargo. Refuses to build a bare locomotive: one runs its route, reports healthy and carries
+nothing. Refuses when too few days remain for it to pay for itself.
+"""
+            parameters = {
+                type = "object"
+                properties = {
+                    pair_id = { type = "string", description = "Which corridor, as confirm_rail_route reports it" }
+                    engine_id = { type = "integer", description = "From choose_train" }
+                    wagon_id = { type = "integer", description = "From choose_train" }
+                    num_wagons = { type = "integer", description = "How many wagons, defaulting to one per platform tile" }
+                    price = { type = "integer", description = "What it costs, so payback can be checked" }
+                }
+                required = ["pair_id", "engine_id", "wagon_id"]
+            }
+        }
+        class = "ns_rail_agent.plan_buy_train.PlanBuyTrain"
+    }
+    {
+        name = "plan_dispatch"
+        function = {
+            description = """
+Stages the two station orders and the start for a train that has none, with no order flags: a
+train told to wait for a full load sits in a station that has not started producing yet. Checks
+the train can carry something before ordering it anywhere.
+"""
+            parameters = {
+                type = "object"
+                properties = {
+                    vehicle_id = { type = "integer", description = "Which train" }
+                    pair_id = { type = "string", description = "Which corridor it should work" }
+                }
+                required = ["vehicle_id", "pair_id"]
+            }
+        }
+        class = "ns_rail_agent.plan_dispatch.PlanDispatch"
+    }
+
+    # ---- rail: care --------------------------------------------------------------------------
+    {
+        name = "rail_health_check"
+        function = { description = """
+A verdict per train: lost, carries_nothing, stuck, watch or healthy, with the reason. Reads the
+game's own lost flag, which is the only authority on whether a train can run its line, and the
+cargo capacity of the consist, which is how a locomotive with no wagons is caught.
+""" }
+        class = "ns_rail_agent.rail_health_check.RailHealthCheck"
+    }
+    {
+        name = "plan_repoint"
+        function = {
+            description = """
+Stages fresh orders for a lost or stuck train: clears what it has, because add_order appends,
+then re-issues the two its corridor needs and starts it.
+"""
+            parameters = {
+                type = "object"
+                properties = {
+                    vehicle_id = { type = "integer", description = "From rail_health_check" }
+                    pair_id = { type = "string", description = "The corridor it should work" }
+                }
+                required = ["vehicle_id", "pair_id"]
+            }
+        }
+        class = "ns_rail_agent.plan_repoint.PlanRepoint"
+    }
+    {
+        name = "plan_retire"
+        function = {
+            description = """
+Sends a hopeless train to a depot, and sells it on a later turn once it has arrived. The two
+cannot be done in one step. Refuses when no corridor has a depot joined to its line, because a
+train sent to one it cannot reach never arrives.
+"""
+            parameters = {
+                type = "object"
+                properties = { vehicle_id = { type = "integer", description = "From rail_health_check, or omit for all hopeless" } }
+            }
+        }
+        class = "ns_rail_agent.plan_retire.PlanRetire"
+    }
+]

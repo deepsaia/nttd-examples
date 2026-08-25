@@ -4,6 +4,60 @@
 # NOT live here is strategy: the four modes are different games, and a shared strategist would
 # be four strategies averaged into none.
 
+# ---------------------------------------------------------------------------------------------
+# How long a turn may take, and what happens when part of it fails.
+#
+# Top-level keys rather than variables, so every network that includes this file gets them and
+# no two networks can drift apart on them. A network that wants a different value assigns it
+# after the include, where the later assignment wins.
+
+# How long ONE TURN may run before the server cancels it.
+#
+# neuro-san's default is 300 seconds. A measured turn was cancelled at 55 game days with
+# "exceeded max_execution_seconds=300.0s", and a cancelled turn loses everything in it,
+# including its token accounting, so the run reported no spend at all.
+#
+# The real bound on a turn is the day budget in ns/advance_days.py, which ends a turn after a
+# fixed number of game days however many calls that took. This is the backstop for a turn that
+# stops making progress without spending days, and it is generous because the alternative is
+# throwing away work that was going fine.
+#
+# THE CLIENT MUST WAIT LONGER THAN THIS. examples/neuro_san_play.py sets its stream timeout
+# from this number, and a test asserts it is the larger of the two: a client that gives up
+# before the server is allowed to finish will eventually kill a run that was going to complete,
+# which is exactly what happened when the client waited 1800 seconds against this 6000.
+max_execution_seconds = 6000
+
+# A turn is one request carrying the conversation forward, so this is what stops the context
+# growing without limit across a long run. It is also what keeps per-turn cost flat: measured
+# over 13 turns, cost stayed near $1.7 rather than climbing.
+max_message_history = 40
+
+# How many times an agent run is re-attempted when it hits a RETRYABLE failure: provider rate
+# limits, provider timeouts, and other temporary faults. Non-retryable failures are not
+# re-attempted, which is the right call: an API key error or a ValueError out of a tool would
+# only happen again.
+#
+# Raised from the default of 3. A session is hours long and a single unlucky 429 in the middle
+# of it costs the whole run, so two more attempts are cheap insurance. They are bounded by
+# max_execution_seconds above, which is what stops this becoming an unbounded retry loop.
+max_attempts = 5
+
+# The LangGraph super-step limit for a turn, which is `max_iterations` under its current name:
+# that spelling is deprecated and reads as an iteration count, while what it really bounds is
+# the whole graph execution, every tool call and every model call together.
+#
+# The default is 10,000 and a turn here is bounded by the day budget in ns/advance_days.py
+# rather than by steps, so the default would very likely never be reached. This is headroom
+# rather than a fix for anything measured: hitting it costs the entire turn, including its
+# token accounting, and the difference between 10,000 and 40,000 costs nothing until then.
+max_steps = 40000
+
+# NOT SET, deliberately: request_timeout_seconds. It defaults to 0, meaning no timeout, and it
+# is a SERVER-side cap on one client chat request. Setting it would abort exactly the long
+# turns max_execution_seconds is there to allow. The timeout that needs raising when a run dies
+# on a slow turn is the CLIENT's, not this.
+
 # Anthropic, because the judgement here is about trade-offs rather than recall: which of three
 # viable corridors pays, whether to expand or consolidate, which problem matters now. The
 # strategist overrides this to a stronger model; the workers do not need one.
@@ -38,6 +92,11 @@ ns_allow = {
             "fleet_seen"  # last known vehicle ids, which is how a crash is noticed
             "air_health"  # how long each aircraft has been in its current state
             "air_retiring" # vehicles sent to a depot and awaiting sale
+            "rail_rail_type" # the one rail technology this company builds and buys in
+            "rail_pairs"  # producer and consumer industries paired by a cargo they share
+            "rail_intent" # what each corridor was MEANT to be, which is how a partial build is read
+            "rail_health" # how long each train has been where it is, and its last verdict
+            "rail_retiring" # trains sent to a depot and awaiting sale
             "days_this_turn" # days already spent this turn, which is what bounds a turn
             "turn_stamp"   # which turn those days belong to, stamped by the runner
             "turn_stamp_seen" # the stamp as advance_days last saw it
