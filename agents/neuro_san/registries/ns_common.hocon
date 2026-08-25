@@ -38,6 +38,9 @@ ns_allow = {
             "fleet_seen"  # last known vehicle ids, which is how a crash is noticed
             "air_health"  # how long each aircraft has been in its current state
             "air_retiring" # vehicles sent to a depot and awaiting sale
+            "days_this_turn" # days already spent this turn, which is what bounds a turn
+            "turn_stamp"   # which turn those days belong to, stamped by the runner
+            "turn_stamp_seen" # the stamp as advance_days last saw it
         ]
     }
 }

@@ -46,7 +46,21 @@ TURNS: Final = "turns"
 # previous list. That makes this cross-turn state: within one turn nothing has crashed yet.
 FLEET_SEEN: Final = "fleet_seen"
 
-ALLOWED: Final = (PLAN, ROUTES, REFUSALS, SITES, DECISIONS, TURNS, FLEET_SEEN)
+# Game days already spent in the CURRENT turn, and the turn they belong to.
+#
+# The turn number is stamped by the RUNNER, because only the client knows where a turn
+# begins: a coded tool sees one continuous stream of calls and cannot tell the last call of
+# one request from the first call of the next. When the stamp changes, the budget resets.
+DAYS_THIS_TURN: Final = "days_this_turn"
+TURN_STAMP: Final = "turn_stamp"
+
+# The stamp as this tool last saw it, which is how a turn change is noticed.
+TURN_STAMP_SEEN: Final = "turn_stamp_seen"
+
+ALLOWED: Final = (
+    PLAN, ROUTES, REFUSALS, SITES, DECISIONS, TURNS, FLEET_SEEN,
+    DAYS_THIS_TURN, TURN_STAMP, TURN_STAMP_SEEN,
+)
 
 # --- credentials, downstream only --------------------------------------------------------
 

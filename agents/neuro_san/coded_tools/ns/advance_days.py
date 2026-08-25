@@ -43,12 +43,46 @@ except ImportError:
     from ns.gateway import NttdGateway
     from ns.observation import our_company, our_vehicles, world
 
-# A whole T1 year is 366 days, so no single call can run the entire session out by accident and
-# leave the network with nothing left to decide.
-MOST_DAYS_AT_ONCE = 120
+# The most game days ONE TURN may spend, however many calls it takes.
+#
+# Per turn, not per call: a turn that called this twice advanced 55 days on a measured run,
+# which is how a turn grows until it exceeds the server's execution cap and is cancelled with
+# everything in it lost, including that turn's token accounting.
+#
+# Fourteen is a chosen bound, not a measured one, and it is a trade. Smaller turns keep the
+# context and the tool calls in one request small and report spend more often, so a crash
+# loses less. But every turn re-sends the conversation and is billed for it, so turns are the
+# unit of cost: a measured 366 day run took 13 turns at about $1.73 each. At fourteen days a
+# T1 run is roughly 26 turns, and one day per turn would be 366 of them.
+#
+# The agent still chooses: anything from 1 to what is left of the budget.
+DAYS_PER_TURN = 14
 
-# Long enough to see a vehicle leave its depot, which is the shortest wait worth taking.
-DEFAULT_DAYS = 30
+# The same number as a per-call ceiling, so a runner that does not stamp its turns is still
+# bounded. Without a stamp there is no turn to bound, and one call is the only unit left.
+MOST_DAYS_AT_ONCE = DAYS_PER_TURN
+
+# Long enough to see a vehicle leave its depot, which is the shortest wait worth taking, and
+# no more than a whole turn's budget.
+DEFAULT_DAYS = DAYS_PER_TURN
+
+
+def _spent_this_turn(sly_data: dict[str, Any]) -> int:
+    """Days already spent in the current turn, resetting when the turn changes.
+
+    The runner stamps each turn, because only the client knows where one begins: a coded tool
+    sees one continuous stream of calls and cannot tell the last call of one request from the
+    first call of the next. A missing stamp means nobody is counting turns, so the budget is
+    treated as fresh and the per-call ceiling is the only bound left.
+    """
+    stamp = sly_data.get(key.TURN_STAMP)
+    if stamp is None:
+        return 0
+    if sly_data.get(key.TURN_STAMP_SEEN) != stamp:
+        sly_data[key.TURN_STAMP_SEEN] = stamp
+        sly_data[key.DAYS_THIS_TURN] = 0
+        return 0
+    return int(sly_data.get(key.DAYS_THIS_TURN) or 0)
 
 
 class AdvanceDays(CodedTool):
@@ -63,6 +97,21 @@ class AdvanceDays(CodedTool):
         wanted, note_on_days = counting.counted(
             args.get("days"), DEFAULT_DAYS, most=MOST_DAYS_AT_ONCE
         )
+
+        spent = _spent_this_turn(sly_data)
+        left = DAYS_PER_TURN - spent
+        if left <= 0:
+            return (
+                f"Error: this turn has already spent its {DAYS_PER_TURN} days. End the turn "
+                "and say what you did; the next one starts with a fresh budget and a fresh "
+                "look at the world. Reading costs nothing, so read before you finish."
+            )
+        if wanted > left:
+            note_on_days = (
+                f"{note_on_days} Asked for {wanted}, and {left} of this turn's "
+                f"{DAYS_PER_TURN} days remain, so {left} passed."
+            ).strip()
+            wanted = left
 
         try:
             # The turn's cached world, which every tool that steps keeps current, so the
@@ -96,7 +145,11 @@ class AdvanceDays(CodedTool):
                     "why_it_stopped": f"the step was refused by the server: {problem}",
                 }
             steps += 1
-            days += int(result.get("days_advanced") or 0)
+            passed = int(result.get("days_advanced") or 0)
+            days += passed
+            # Banked as they pass rather than at the end, so a turn cancelled mid-wait still
+            # has the days it spent counted against its budget.
+            sly_data[key.DAYS_THIS_TURN] = _spent_this_turn(sly_data) + passed
             snapshot = result.get("snapshot")
             if snapshot:
                 latest = snapshot
