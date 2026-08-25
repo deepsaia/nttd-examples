@@ -409,7 +409,7 @@ never seeing it.
 
 ---
 
-## 9. File layout in nttd-examples
+## 9. File layout in nttd-workbench
 
 `AGENT_TOOL_PATH=agents/neuro_san/coded_tools` with `AGENT_TOOL_PATH_ONLY=true`. Class
 resolution searches `<tool_path>/<network_name>/` first and then walks up to `<tool_path>/`,
