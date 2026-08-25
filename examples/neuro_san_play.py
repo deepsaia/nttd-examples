@@ -76,10 +76,20 @@ _AGGREGATE_KEYS = frozenset({
 def _spend_from(accounting: dict) -> list[dict]:
     """neuro-san's token accounting for one turn, as nttd's per-model spend.
 
-    The shape is {provider: {model: {prompt_tokens, completion_tokens, total_cost, ...}}},
-    with the network's totals as flat keys alongside. nttd wants one entry per model, and its
-    free-form `role` is where the provider goes: a front man on opus and workers on sonnet is
-    exactly the split it keeps spend per model to show.
+    The shape, read off a real payload rather than assumed:
+
+        {total_tokens, prompt_tokens, completion_tokens, successful_requests,
+         empty_responses, total_cost, time_taken_in_seconds, caveats,
+         models: {provider: {model: {the same per-model figures}}}}
+
+    The per-model breakdown is NESTED under `models`. An earlier version walked the top level
+    looking for it, found the `models` dict itself, and read a provider name as a model with
+    zero tokens. It passed a test because the test used a fixture invented from the same wrong
+    assumption; the fixture below is lifted from a logged payload.
+
+    nttd wants one entry per model, and its free-form `role` is where the provider goes: a
+    front man on opus and workers on sonnet is exactly the split it keeps spend per model to
+    show.
 
     **The cost is omitted when neuro-san reports zero.** It prices models from its own table
     and falls back to zero with only a log warning when a model is not in it, so a zero is far
@@ -89,8 +99,11 @@ def _spend_from(accounting: dict) -> list[dict]:
     money.
     """
     spend: list[dict] = []
-    for provider, models in (accounting or {}).items():
-        if provider in _AGGREGATE_KEYS or not isinstance(models, dict):
+    breakdown = (accounting or {}).get("models")
+    if not isinstance(breakdown, dict):
+        return spend
+    for provider, models in breakdown.items():
+        if not isinstance(models, dict):
             continue
         for model, stats in models.items():
             if not isinstance(stats, dict):
@@ -179,6 +192,12 @@ def play(session: str, token: str, network: str, host: str, port: int, turns: in
     # sly_data addresses the company and is deliberately kept out of the chat stream: it is
     # not something a model should see, restate or invent.
     state: dict = {
+        # MAXIMAL, because the token accounting arrives as an AgentMessage and the DEFAULT
+        # filter is MINIMAL, which is a compound of ChatContextMessageFilter alone. So the
+        # server dropped every accounting message before it left, `token_accounting` came
+        # back empty, and the runner reported nothing while looking like it had: no error, no
+        # warning, just a bundle that said no spend was reported.
+        "chat_filter": {"chat_filter_type": "MAXIMAL"},
         "sly_data": {"session_id": session, "token": token},
         "chat_context": {},
         "last_chat_response": None,
@@ -187,6 +206,12 @@ def play(session: str, token: str, network: str, host: str, port: int, turns: in
 
     start = _status(session).get("game_date")
     for turn in range(1, turns + 1):
+        # Stamped here because only the client knows where a turn begins. A coded tool sees
+        # one continuous stream of calls; it cannot tell the last call of one request from
+        # the first call of the next. advance_days reads this to bound the days a single turn
+        # may spend, which is what stops a turn growing until it exceeds the server's
+        # execution cap and is cancelled with everything in it lost.
+        state["sly_data"]["turn_stamp"] = turn
         state["user_input"] = TURN
         state = processor.process_once(state)
         _report_spend(session, token, state.get("token_accounting") or {})

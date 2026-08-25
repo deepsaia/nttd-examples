@@ -3,6 +3,24 @@ include "agents/neuro_san/registries/ns_common.hocon"
 llm_config = ${ns_llm_config}
 allow = ${ns_allow}
 
+# How long ONE TURN may run before the server cancels it.
+#
+# neuro-san's default is 300 seconds, and DESIGN.md has specified 6000 since this network was
+# written; it was simply never set here. A measured turn was cancelled at 55 game days with
+# "exceeded max_execution_seconds=300.0s", and a cancelled turn loses everything in it,
+# including its token accounting, so the run reported no spend at all.
+#
+# The real bound on a turn is the day budget in ns/advance_days.py, which ends a turn after a
+# fixed number of game days however many calls that took. This is the backstop for a turn that
+# stops making progress without spending days, and it is generous because the alternative is
+# throwing away work that was going fine.
+max_execution_seconds = 6000
+
+# A turn is one request carrying the conversation forward, so this is what stops the context
+# growing without limit across a long run. It is also what keeps per-turn cost flat: measured
+# over 13 turns, cost stayed near $1.7 rather than climbing.
+max_message_history = 40
+
 metadata {
     description = "Plays one nttd session as an air transport company. Aircraft need nothing built between their endpoints, which removes the class of failure that stops rail and water, at the cost of expensive airports and aeroplanes."
     tags = ["nttd", "air"]
