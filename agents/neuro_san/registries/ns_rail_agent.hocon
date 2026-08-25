@@ -3,16 +3,6 @@ include "agents/neuro_san/registries/ns_common.hocon"
 llm_config = ${ns_llm_config}
 allow = ${ns_allow}
 
-# The same 6000 as air, and for the same reason: a cancelled turn loses everything in it,
-# including its token accounting, so the run reports no spend at all. Rail needs the headroom
-# more than air does, because a corridor takes four commits to reach a train where air takes
-# two, and each one is a full round through the strategist.
-max_execution_seconds = 6000
-
-# What stops the context growing without limit across a long run, and what keeps per-turn cost
-# flat rather than climbing.
-max_message_history = 40
-
 metadata {
     description = "Plays one nttd session as a rail freight company. Rail pays best over long hauls and is the only mode where a route can look finished in every report and carry nothing, so most of this network is about proving each part exists before the next one is built."
     tags = ["nttd", "rail"]
