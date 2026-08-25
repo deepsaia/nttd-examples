@@ -64,21 +64,22 @@ entirely, and those want opposite answers.
 Run `ns run` yourself if you want NSFlow on <http://localhost:4173>, where every tool call and
 its arguments are visible while a turn runs. `runex` will find it.
 
-### Or drive the lifecycle yourself
-
-`nttd benchmark` is these rolled together. Use them separately to change something in between,
-run two sessions against one server, or open a world now and attach much later:
-
-```bash
-uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
-uv run nttd session start -s <session> --agent-companies 1
-uv run nttd session attach <session>   # prints the participant token
-uv run nttd session stop -s <session>
-```
-
-`--agent-companies 1` is the part to notice: without it the session has no contestant company,
-so no token is issued and nothing can play it. Nothing here waits for the end condition, so
-you end the run yourself.
+> ### [Optional] Drive the lifecycle yourself
+>
+> Instead of `nttd benchmark`, which is these rolled into one. Use them separately to change
+> something in between, run two sessions against one server, or open a world now and attach
+> to it much later.
+>
+> ```bash
+> uv run nttd session create --config config/benchmark/t2_256_flat_1001_realtime.conf
+> uv run nttd session start -s <session> --agent-companies 1
+> uv run nttd session attach <session>   # prints the participant token
+> uv run nttd session stop -s <session>
+> ```
+>
+> `--agent-companies 1` is the part to notice: without it the session has no contestant
+> company, so no token is issued and nothing can play it. Nothing here waits for the end
+> condition, so you end the run yourself.
 
 ---
 
