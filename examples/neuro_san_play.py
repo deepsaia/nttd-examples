@@ -24,6 +24,15 @@ remembers what it decided while each turn stays a manageable size.
 Stepped and realtime differ only in who moves the clock. In stepped play the network advances
 it with `let_time_pass`; in realtime the clock runs regardless and that tool simply lets time
 be observed. The loop is the same either way: keep asking until the session ends.
+
+**A dropped stream is not the end of the run.** neuro-san streams a turn back over one long
+HTTP response, and anything that interrupts it, a slow provider, a laptop sleeping, a network
+blip, raises out of `process_once` and used to end the process with a traceback and a session
+still running with hours left on it. A turn is now retried instead. What is lost is whatever
+that turn had accumulated in `sly_data`, because it only returns to the client when the turn
+completes; what survives is the world, which is on nttd's side, and the conversation, which is
+in the `chat_context` this loop still holds. So the next attempt reads the position again and
+carries on, which is precisely what the network does at the start of every turn anyway.
 """
 
 from __future__ import annotations
@@ -31,6 +40,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import time
 
 import httpx
 
@@ -43,6 +53,30 @@ API_URL = os.environ.get("NTTD_API_URL", "http://127.0.0.1:8000")
 # launcher: the runner is the only thing that knows what it is. It matches the key runex
 # offers this runner under, which tests/test_runex.py asserts.
 SYSTEM_TYPE = "neuro-san"
+
+# How long the client waits on a silent stream, and why it is this number.
+#
+# It MUST exceed the server's max_execution_seconds, and this is the defect that ended a live
+# run: the client was set to 1800 while ns_common.hocon allows a turn 6000, so a turn the
+# server was still perfectly entitled to be working on had its stream torn down underneath it.
+# The traceback that came back was about connectivity and named nothing that was actually
+# wrong, which is the worst kind: it sent the reader looking at the network.
+#
+# tests/test_ns_networks.py asserts this is larger than every served network's cap, so the two
+# cannot drift apart again.
+STREAM_TIMEOUT_SECONDS = 7200
+
+# How many times one turn is re-attempted after the stream fails. Separate from neuro-san's own
+# max_attempts, which retries a failing agent run INSIDE the server: this covers the case where
+# the server never got the chance to report anything at all.
+#
+# Three, because the failures worth retrying are transient by definition. A fourth attempt
+# against something genuinely broken only delays a report the run needs.
+TURN_ATTEMPTS = 3
+
+# Seconds to wait before re-attempting a turn. A provider rate limit clears in seconds and a
+# reconnecting laptop takes rather longer, so the wait grows with each attempt.
+RETRY_BACKOFF_SECONDS = 20
 
 TURN = (
     "Take the next decision in this session. Read the position first, fix anything that is "
@@ -174,6 +208,36 @@ def _declare(session: str, token: str, network: str) -> None:
         logger.warning("Could not declare the system type: %r", failure)
 
 
+def _take_turn(processor: object, state: dict, turn: int) -> dict | None:
+    """One turn, re-attempted while the stream keeps failing. None once it has run out.
+
+    Only the stream is retried. A turn that completed and said something unhelpful is a turn
+    the network is entitled to have, and re-running it would be this loop overruling the thing
+    it is supposed to be measuring.
+
+    neuro-san reports a broken stream as a ValueError carrying its connectivity help text, so
+    that is what is caught. It is not narrowed further: the underlying requests exception is
+    already swallowed by neuro-san's own except clause, and matching on the text of a help
+    message would break the first time that message is reworded.
+    """
+    for attempt in range(1, TURN_ATTEMPTS + 1):
+        try:
+            return processor.process_once(state)
+        except ValueError as broken:
+            if attempt == TURN_ATTEMPTS:
+                logger.error("turn %d failed on attempt %d: %s", turn, attempt, broken)
+                return None
+            wait = RETRY_BACKOFF_SECONDS * attempt
+            logger.warning(
+                "turn %d lost its stream on attempt %d, retrying in %ds. The world is on "
+                "nttd's side and the conversation is still held here, so the turn is simply "
+                "taken again: %s",
+                turn, attempt, wait, broken,
+            )
+            time.sleep(wait)
+    return None
+
+
 def play(session: str, token: str, network: str, host: str, port: int, turns: int) -> int:
     from neuro_san.client.streaming_input_processor import (  # noqa: PLC0415
         StreamingInputProcessor,
@@ -185,7 +249,8 @@ def play(session: str, token: str, network: str, host: str, port: int, turns: in
     _declare(session, token, network)
 
     agent = HttpServiceAgentSession(
-        host=host, port=str(port), agent_name=network, streaming_timeout_in_seconds=1800
+        host=host, port=str(port), agent_name=network,
+        streaming_timeout_in_seconds=STREAM_TIMEOUT_SECONDS,
     )
     processor = StreamingInputProcessor(session=agent)
 
@@ -213,7 +278,12 @@ def play(session: str, token: str, network: str, host: str, port: int, turns: in
         # execution cap and is cancelled with everything in it lost.
         state["sly_data"]["turn_stamp"] = turn
         state["user_input"] = TURN
-        state = processor.process_once(state)
+        played_out = _take_turn(processor, state, turn)
+        if played_out is None:
+            print(f"  turn {turn}: the stream failed {TURN_ATTEMPTS} times; giving up")
+            print("  the session is still open, so it can be picked up again from here")
+            return 1
+        state = played_out
         _report_spend(session, token, state.get("token_accounting") or {})
 
         said = (state.get("last_chat_response") or "").strip()
