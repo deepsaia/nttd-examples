@@ -66,7 +66,7 @@ KINDS: tuple[ExperimentKind, ...] = (
         key="neuro-san",
         title="neuro-san",
         blurb="A multi-agent network: a strategist that reads the position and calls workers "
-              "which survey, build, buy and repair. Needs a neuro-san server running.",
+              "which survey, build, buy and repair.",
         module="examples.neuro_san_play",
         requires="neuro_san",
         install_hint="uv sync --extra neuro-san",
