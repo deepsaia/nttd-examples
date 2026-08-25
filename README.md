@@ -100,29 +100,28 @@ Questions in order, and the usual answer to each is Enter:
 
   2  Agent server
      starting a neuro-san server on localhost:8088
-     serving 1 network(s)
+     serving 2 network(s)
 
-  •  Network: ns_air_agent (the only one this server serves)
+  3  Which network?
 
-  3  Which session?
+       Network           What it plays
+  1    ns_air_agent      Plays one nttd session as an air transport company.
+  2    ns_rail_agent     Plays one nttd session as a rail freight company.
+
+  4  Which session?
 
        Session                            Scenario                    Mode      Days   State
   1    20260824-095217ist-perky-rocket    t1-256-flat-1001-stepped    stepped    366   running  scored
 
-  4  Participant token
+  5  Participant token
      nttd issued pt_ae9a99a44499418a8632856663bd7c65 for this session
 ```
 
-One network is stated rather than offered, because a menu of one is a keystroke that teaches
-nothing. Serve two or more and it asks, with each network's own description of what it plays:
+A single network is stated rather than offered, because a menu of one is a keystroke that
+teaches nothing:
 
 ```
-  •  Which network?
-
-       Network           What it plays
-  1    ns_air_agent      Plays one nttd session as an air transport company.
-  2    ns_rail_agent     Rail: platform axis, depot junction and rail type must agree.
-  3    ns_water_agent    Water: which docks share a body of water at all.
+  •  Network: ns_air_agent (the only one this server serves)
 ```
 
 The list comes from the server, not from a manifest on disk: the manifest is what the server
