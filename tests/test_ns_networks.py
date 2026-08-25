@@ -258,6 +258,75 @@ def test_the_strategist_runs_a_stronger_model_than_the_workers(network: str) -> 
     assert _network(network)["llm_config"]["model_name"] == "claude-sonnet"
 
 
+# --- the client and the server have to agree about how long a turn may take -------------------
+
+
+def test_the_client_waits_longer_than_the_server_is_allowed_to_take(network: str) -> None:
+    """The defect that ended a live run, and the reason it was so hard to read.
+
+    The client's stream timeout was 1800 seconds against a server allowed 6000. A turn the
+    server was still entitled to be working on had its stream torn down underneath it, and what
+    came back was neuro-san's connectivity help text: ten suggestions about ports, protocols and
+    docker, not one of which was the problem. Nothing in either file mentioned the other, so
+    the two numbers could drift apart without anything noticing.
+    """
+    from examples import neuro_san_play  # noqa: PLC0415
+
+    allowed = int(_network(network)["max_execution_seconds"])
+    assert neuro_san_play.STREAM_TIMEOUT_SECONDS > allowed, (
+        f"the client gives up after {neuro_san_play.STREAM_TIMEOUT_SECONDS}s while "
+        f"{network} may take {allowed}s, so a long turn will be killed by its own client"
+    )
+
+
+def test_a_retryable_provider_failure_does_not_end_the_turn(network: str) -> None:
+    """A session is hours long, and one unlucky rate limit in the middle of it should not cost
+    the whole run. neuro-san's default is 3 attempts; this asks for more, bounded by
+    max_execution_seconds so it cannot become an unbounded retry loop.
+    """
+    assert int(_network(network)["max_attempts"]) >= 3
+
+
+def test_the_deprecated_spelling_of_the_step_limit_is_not_used(network: str) -> None:
+    """`max_iterations` is deprecated for `max_steps`, and it reads as the wrong thing anyway.
+
+    It sounds like a count of iterations. What it bounds is the whole graph execution: every
+    tool call and every model call, sequential nodes each taking a super-step.
+    """
+    for name in (f"{network}.hocon", "ns_common.hocon"):
+        for line in (_REGISTRIES / name).read_text().splitlines():
+            assert not line.strip().startswith("max_iterations"), (
+                f"{name} uses the deprecated max_iterations; use max_steps"
+            )
+
+
+def test_the_server_side_request_timeout_is_left_alone(network: str) -> None:
+    """It defaults to 0, meaning no timeout, and it caps a single client chat request.
+
+    Setting it would abort exactly the long turns max_execution_seconds exists to allow. The
+    timeout that needs raising when a run dies on a slow turn is the client's.
+    """
+    body = (_REGISTRIES / f"{network}.hocon").read_text()
+    shared = (_REGISTRIES / "ns_common.hocon").read_text()
+    for text in (body, shared):
+        for line in text.splitlines():
+            bare = line.strip()
+            if bare.startswith("request_timeout_seconds"):
+                pytest.fail(f"request_timeout_seconds is set: {bare}")
+
+
+def test_the_execution_bounds_are_shared_not_copied(network: str) -> None:
+    """Two networks with their own copies of one number is two numbers waiting to disagree."""
+    body = (_REGISTRIES / f"{network}.hocon").read_text()
+    for setting in ("max_execution_seconds", "max_message_history", "max_attempts",
+                    "max_steps"):
+        for line in body.splitlines():
+            assert not line.strip().startswith(f"{setting} ="), (
+                f"{network} sets {setting} itself; it belongs in ns_common.hocon"
+            )
+        assert _network(network)[setting] is not None
+
+
 # A CHOSEN ceiling, not a measured one, and said so because the difference matters: the numbers
 # in this codebase are either read from the game's source or derived from the session, and a
 # style guard is neither. It exists to stop prose creeping back in once the rules have been moved
